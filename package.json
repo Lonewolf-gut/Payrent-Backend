@@ -4,9 +4,11 @@
   "private": true,
   "scripts": {
     "copy-prisma-client": "node scripts/copy-prisma-client.js",
-    "dev": "next dev --port 3001",
-    "dev:webpack": "next dev --port 3001 --webpack",
+    "dev": "next dev --port 3001 --webpack",
+    "setup:env": "node scripts/setup-env.js",
+    "dev:turbo": "next dev --port 3001",
     "build": "npm run db:generate && npm run copy-prisma-client && next build --webpack",
+    "postinstall": "npm run db:generate && npm run copy-prisma-client",
     "start": "next start --port 3001",
     "lint": "eslint",
     "test": "vitest run",
@@ -20,6 +22,9 @@
   },
   "prisma": {
     "seed": "npx tsx prisma/seed.ts"
+  },
+  "engines": {
+    "node": ">=20"
   },
   "dependencies": {
     "@auth/prisma-adapter": "^2.11.2",

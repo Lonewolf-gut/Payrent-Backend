@@ -1,0 +1,14 @@
+# =============================================================================
+# COPY EVERYTHING BELOW INTO YOUR .env FILE
+# (Project root: C:\Users\USER\Desktop\PayRent\.env)
+# =============================================================================
+
+# --- Arkesel SMS (from your Arkesel dashboard) ---
+SMS_PROVIDER=arkesel
+SMS_API_KEY=b3Zabnd6V1RWQW9MeFlmUG9ialM
+ARKESEL_SMS_SENDER_ID=PayForMe
+ARKESEL_SMS_API_VERSION=legacy
+SMS_API_URL=https://sms.arkesel.com/sms/api
+
+# Replace PayForMe with your APPROVED Sender ID from Arkesel if different.
+# Sender ID max 11 characters. Restart dev server after saving: npm run dev
