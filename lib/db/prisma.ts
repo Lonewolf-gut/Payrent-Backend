@@ -24,29 +24,30 @@ function sleep(ms: number) {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
-/** Retry DB connect on cold Docker Desktop / dropped connections. */
-export async function ensureDbConnection(retries = 5): Promise<void> {
+let dbReadyAt = 0;
+const DB_READY_TTL_MS = 15_000;
+
+/**
+ * Lightweight health check before handlers run.
+ * Never disconnects the shared Prisma client — concurrent requests share one
+ * engine, and disconnect/reconnect races cause "Engine is not yet connected".
+ */
+export async function ensureDbConnection(retries = 3): Promise<void> {
+  if (Date.now() - dbReadyAt < DB_READY_TTL_MS) {
+    return;
+  }
+
   for (let attempt = 1; attempt <= retries; attempt++) {
     try {
       await prisma.$queryRaw`SELECT 1`;
+      dbReadyAt = Date.now();
       return;
-    } catch {
-      try {
-        await prisma.$disconnect();
-      } catch {
-        // ignore disconnect errors
+    } catch (error) {
+      if (attempt === retries) {
+        dbReadyAt = 0;
+        throw error;
       }
-
-      try {
-        await prisma.$connect();
-        await prisma.$queryRaw`SELECT 1`;
-        return;
-      } catch (error) {
-        if (attempt === retries) {
-          throw error;
-        }
-        await sleep(Math.min(attempt * 1500, 5000));
-      }
+      await sleep(Math.min(attempt * 400, 1500));
     }
   }
 }
