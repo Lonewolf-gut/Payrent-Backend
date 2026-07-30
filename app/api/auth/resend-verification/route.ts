@@ -1,19 +1,15 @@
 import { prisma } from "@/lib/db/prisma";
 import { otpService } from "@/lib/services/otp.service";
 import { notificationService } from "@/lib/services/notification.service";
-import {
-  isMailtrapSandbox,
-  isSmtpConfigured,
-} from "@/lib/services/email.service";
+import { isRealEmailConfigured } from "@/lib/services/email.service";
 import { apiResponse, withAuth } from "@/lib/api/handler";
 
 type VerificationDelivery = {
   sent: boolean;
-  deliveryMode: "smtp" | "ethereal" | "log" | null;
+  deliveryMode: "resend" | "smtp" | "ethereal" | "log" | null;
   previewUrl: string | null;
   devCode: string | null;
   realEmailExpected: boolean;
-  mailtrapSandbox: boolean;
 };
 
 function buildDeliveryPayload(
@@ -21,28 +17,26 @@ function buildDeliveryPayload(
   emailResult: Awaited<ReturnType<typeof notificationService.deliverEmail>>
 ): VerificationDelivery {
   const deliveryMode = emailResult?.mode ?? "log";
-  const smtpOk = deliveryMode === "smtp" && isSmtpConfigured();
+  const realEmail = deliveryMode === "resend" || deliveryMode === "smtp";
   const isDevelopment = process.env.NODE_ENV === "development";
 
   return {
     sent: true,
     deliveryMode,
     previewUrl: emailResult?.previewUrl ?? null,
-    devCode: isDevelopment && !smtpOk ? code : null,
-    realEmailExpected: smtpOk,
-    mailtrapSandbox: isMailtrapSandbox(),
+    devCode: isDevelopment && !realEmail ? code : null,
+    realEmailExpected: realEmail,
   };
 }
 
 function buildStatusPayload(pendingCode: string | null) {
   const isDevelopment = process.env.NODE_ENV === "development";
-  const smtpConfigured = isSmtpConfigured();
+  const emailConfigured = isRealEmailConfigured();
 
   return {
     hasPendingCode: Boolean(pendingCode),
-    devCode: isDevelopment && pendingCode && !smtpConfigured ? pendingCode : null,
-    realEmailExpected: smtpConfigured,
-    mailtrapSandbox: isMailtrapSandbox(),
+    devCode: isDevelopment && pendingCode && !emailConfigured ? pendingCode : null,
+    realEmailExpected: emailConfigured,
     isDevelopment,
   };
 }

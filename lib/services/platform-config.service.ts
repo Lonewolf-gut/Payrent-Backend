@@ -27,7 +27,15 @@ export function getPlatformConfig() {
         provider: process.env.SMS_PROVIDER ?? "log",
       },
       email: {
-        configured: Boolean(process.env.SMTP_HOST && process.env.SMTP_PASSWORD),
+        provider:
+          process.env.NODE_ENV === "production"
+            ? "smtp"
+            : process.env.RESEND_API_KEY
+              ? "resend"
+              : "smtp",
+        configured:
+          Boolean(process.env.RESEND_API_KEY) ||
+          Boolean(process.env.SMTP_HOST && process.env.SMTP_PASSWORD),
       },
       bankMandates: {
         configured: Boolean(process.env.BANK_API_KEY && process.env.BANK_API_URL),

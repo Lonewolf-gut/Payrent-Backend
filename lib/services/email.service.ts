@@ -1,9 +1,12 @@
 import nodemailer from "nodemailer";
+import { Resend } from "resend";
 import { logger } from "@/lib/logger";
+
+export type EmailProvider = "resend" | "smtp" | "ethereal" | "log";
 
 export type EmailSendResult = {
   queued: boolean;
-  mode: "smtp" | "ethereal" | "log";
+  mode: EmailProvider;
   messageId?: string;
   previewUrl?: string;
   error?: string;
@@ -11,6 +14,12 @@ export type EmailSendResult = {
 
 let smtpTransporter: nodemailer.Transporter | null = null;
 let etherealTransporterPromise: Promise<nodemailer.Transporter> | null = null;
+let resendClient: Resend | null = null;
+
+export function isResendConfigured() {
+  const key = process.env.RESEND_API_KEY?.trim();
+  return Boolean(key && key !== "re_your_resend_api_key");
+}
 
 export function isSmtpConfigured() {
   const host = process.env.SMTP_HOST?.trim();
@@ -21,18 +30,48 @@ export function isSmtpConfigured() {
   return true;
 }
 
+/** @deprecated Mailtrap removed — kept for API compatibility */
 export function isMailtrapSandbox() {
-  return process.env.SMTP_HOST?.includes("sandbox.smtp.mailtrap.io") ?? false;
+  return false;
 }
 
+/** @deprecated Mailtrap removed — kept for API compatibility */
 export function isMailtrapLive() {
-  return process.env.SMTP_HOST?.includes("live.smtp.mailtrap.io") ?? false;
+  return false;
 }
 
-function shouldUseEthereal() {
-  if (process.env.SMTP_MODE === "log") return false;
-  if (process.env.SMTP_MODE === "ethereal") return true;
-  return process.env.NODE_ENV === "development" && !isSmtpConfigured();
+export function isRealEmailConfigured() {
+  return isResendConfigured() || isSmtpConfigured();
+}
+
+export function getEmailFromAddress() {
+  return process.env.SMTP_FROM ?? process.env.RESEND_FROM ?? "PayForMe <onboarding@resend.dev>";
+}
+
+function resolveEmailProvider(): EmailProvider {
+  const explicit = process.env.EMAIL_PROVIDER?.trim().toLowerCase();
+  if (explicit === "log") return "log";
+  if (explicit === "resend" && isResendConfigured()) return "resend";
+  if (explicit === "smtp" && isSmtpConfigured()) return "smtp";
+
+  if (process.env.NODE_ENV === "production") {
+    if (isSmtpConfigured()) return "smtp";
+    if (isResendConfigured()) return "resend";
+    return "log";
+  }
+
+  if (process.env.SMTP_MODE === "log") return "log";
+  if (isResendConfigured()) return "resend";
+  if (isSmtpConfigured()) return "smtp";
+  if (process.env.SMTP_MODE === "ethereal") return "ethereal";
+  return "log";
+}
+
+function getResendClient() {
+  if (!resendClient && isResendConfigured()) {
+    resendClient = new Resend(process.env.RESEND_API_KEY!.trim());
+  }
+  return resendClient;
 }
 
 function getSmtpTransporter() {
@@ -62,7 +101,7 @@ async function getEtherealTransporter() {
       const testAccount = await nodemailer.createTestAccount();
       logger.info("Using Ethereal test SMTP for development emails", {
         user: testAccount.user,
-        hint: "Set SMTP_HOST/SMTP_PASSWORD in .env to send real email instead.",
+        hint: "Set RESEND_API_KEY or SMTP credentials in .env to send real email instead.",
       });
       return nodemailer.createTransport({
         host: testAccount.smtp.host,
@@ -86,11 +125,89 @@ function logDevEmail(params: {
   text?: string;
 }) {
   const text = params.text ?? params.html.replace(/<[^>]+>/g, "");
-  logger.info("Email (dev log mode — not sent via SMTP)", {
+  logger.info("Email (dev log mode — not sent)", {
     to: params.to,
     subject: params.subject,
     body: text,
   });
+}
+
+async function sendViaResend(params: {
+  to: string;
+  subject: string;
+  html: string;
+  text?: string;
+}): Promise<EmailSendResult> {
+  const client = getResendClient();
+  if (!client) {
+    throw new Error("Resend is not configured");
+  }
+
+  const from = getEmailFromAddress();
+  const { data, error } = await client.emails.send({
+    from,
+    to: params.to,
+    subject: params.subject,
+    html: params.html,
+    text: params.text ?? params.html.replace(/<[^>]+>/g, ""),
+  });
+
+  if (error) {
+    throw new Error(error.message);
+  }
+
+  logger.info("Email sent via Resend", {
+    messageId: data?.id,
+    to: params.to,
+  });
+
+  return {
+    queued: true,
+    mode: "resend",
+    messageId: data?.id,
+  };
+}
+
+async function sendViaSmtp(
+  params: {
+    to: string;
+    subject: string;
+    html: string;
+    text?: string;
+  },
+  mode: "smtp" | "ethereal"
+): Promise<EmailSendResult> {
+  const transport =
+    mode === "ethereal" ? await getEtherealTransporter() : getSmtpTransporter();
+  if (!transport) {
+    throw new Error("SMTP is not configured");
+  }
+
+  const from = getEmailFromAddress();
+  const info = await transport.sendMail({
+    from,
+    to: params.to,
+    subject: params.subject,
+    html: params.html,
+    text: params.text ?? params.html.replace(/<[^>]+>/g, ""),
+  });
+
+  const previewUrl =
+    mode === "ethereal" ? nodemailer.getTestMessageUrl(info) || undefined : undefined;
+
+  logger.info("Email sent via SMTP", {
+    mode,
+    messageId: info.messageId,
+    to: params.to,
+    previewUrl,
+  });
+
+  return {
+    queued: true,
+    mode,
+    messageId: info.messageId,
+    previewUrl,
+  };
 }
 
 export async function sendEmail(params: {
@@ -99,81 +216,40 @@ export async function sendEmail(params: {
   html: string;
   text?: string;
 }): Promise<EmailSendResult> {
-  const from = process.env.SMTP_FROM ?? "PayForMe <noreply@payforme.com>";
+  const provider = resolveEmailProvider();
 
-  let transport = getSmtpTransporter();
-  let mode: EmailSendResult["mode"] = "smtp";
-
-  if (!transport && shouldUseEthereal()) {
-    transport = await getEtherealTransporter();
-    mode = "ethereal";
-  }
-
-  if (!transport) {
+  if (provider === "log") {
     logDevEmail(params);
     return { queued: true, mode: "log" };
   }
 
   try {
-    const info = await transport.sendMail({
-      from,
-      to: params.to,
-      subject: params.subject,
-      html: params.html,
-      text: params.text ?? params.html.replace(/<[^>]+>/g, ""),
-    });
-
-    const previewUrl: string | undefined =
-      mode === "ethereal"
-        ? (nodemailer.getTestMessageUrl(info) || undefined)
-        : undefined;
-
-    logger.info("Email sent", {
-      mode,
-      messageId: info.messageId,
-      to: params.to,
-      previewUrl,
-    });
-
-    return {
-      queued: true,
-      mode,
-      messageId: info.messageId,
-      previewUrl,
-    };
-  } catch (error) {
-    const message = error instanceof Error ? error.message : String(error);
-    logger.error("Email delivery failed", { to: params.to, mode, error: message });
-
-    if (shouldUseEthereal() && mode === "smtp") {
-      try {
-        const fallback = await getEtherealTransporter();
-        const info = await fallback.sendMail({
-          from,
-          to: params.to,
-          subject: params.subject,
-          html: params.html,
-          text: params.text ?? params.html.replace(/<[^>]+>/g, ""),
-        });
-        const previewUrl: string | undefined =
-          nodemailer.getTestMessageUrl(info) || undefined;
-        logger.warn("Primary SMTP failed; delivered via Ethereal instead", {
-          to: params.to,
-          previewUrl,
-        });
-        return {
-          queued: true,
-          mode: "ethereal",
-          messageId: info.messageId,
-          previewUrl,
-          error: message,
-        };
-      } catch {
-        // fall through to log mode
-      }
+    if (provider === "resend") {
+      return await sendViaResend(params);
     }
 
+    return await sendViaSmtp(params, provider);
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    logger.error("Email delivery failed", { to: params.to, provider, error: message });
+
     if (process.env.NODE_ENV === "development") {
+      if (provider === "resend" && isSmtpConfigured()) {
+        try {
+          return await sendViaSmtp(params, "smtp");
+        } catch {
+          // fall through
+        }
+      }
+
+      if (provider === "smtp" && process.env.SMTP_MODE !== "log") {
+        try {
+          return await sendViaSmtp(params, "ethereal");
+        } catch {
+          // fall through
+        }
+      }
+
       logDevEmail(params);
       return { queued: true, mode: "log", error: message };
     }
