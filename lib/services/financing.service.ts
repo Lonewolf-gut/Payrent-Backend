@@ -787,6 +787,13 @@ export class FinancingService {
   }
 
   async getPendingForLender(lenderUserId?: string) {
+    const lender = lenderUserId
+      ? await prisma.lender.findUnique({
+          where: { userId: lenderUserId },
+          select: { id: true },
+        })
+      : null;
+
     const requests = await prisma.financingRequest.findMany({
       where: { status: { in: ["PENDING", "UNDER_REVIEW", "READY_FOR_LENDER_REVIEW"] } },
       include: {
@@ -798,19 +805,47 @@ export class FinancingService {
         property: { include: { images: { take: 1 } } },
         mandate: true,
         application: true,
+        ...(lender
+          ? {
+              lenderTags: {
+                where: { lenderId: lender.id },
+                select: { id: true, reason: true, createdAt: true },
+              },
+            }
+          : {}),
       },
       orderBy: { createdAt: "desc" },
     });
 
-    if (!lenderUserId) return requests;
+    const enriched = requests.map((request) => {
+      const tags =
+        "lenderTags" in request && Array.isArray(request.lenderTags)
+          ? request.lenderTags
+          : [];
+      return {
+        ...request,
+        isTaggedForYou: tags.length > 0,
+        tagReason: tags[0]?.reason ?? null,
+        lenderTags: undefined,
+      };
+    });
+
+    const sorted = enriched.sort((a, b) => {
+      if (a.isTaggedForYou === b.isTaggedForYou) {
+        return new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime();
+      }
+      return a.isTaggedForYou ? -1 : 1;
+    });
+
+    if (!lenderUserId) return sorted;
 
     const { getLenderFinancingAccess } = await import(
       "@/lib/subscription/lender-access"
     );
     const access = await getLenderFinancingAccess(lenderUserId);
-    if (access.limit == null) return requests;
+    if (access.limit == null) return sorted;
 
-    return requests.slice(0, access.limit);
+    return sorted.slice(0, access.limit);
   }
 
   async getPendingAdminReview() {

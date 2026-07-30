@@ -57,6 +57,13 @@ export class MandateService {
       "Your repayment mandate is active. Your financing request is ready for lender review."
     );
 
+    if (mandate.financingRequest) {
+      const { lenderTagService } = await import("@/lib/services/lender-tag.service");
+      void lenderTagService
+        .notifyAllLendersRequestPublished(mandate.financingRequest.id)
+        .catch(() => undefined);
+    }
+
     if (adminUserId) {
       await auditService.log({
         userId: adminUserId,

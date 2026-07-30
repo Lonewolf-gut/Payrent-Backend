@@ -26,6 +26,13 @@ export const GET = withAuth(
           investment: {
             include: { lender: { include: { user: { select: { email: true } } } } },
           },
+          lenderTags: {
+            include: {
+              lender: {
+                include: { user: { select: { id: true, email: true } } },
+              },
+            },
+          },
         },
       }),
       prisma.financingRequest.count({ where }),
