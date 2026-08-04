@@ -166,11 +166,85 @@ export class WalletService {
 
   async getBalance(userId: string, type: WalletType) {
     const wallet = await this.getOrCreateWallet(userId, type);
+    const breakdown = await this.getWithdrawableBreakdown(wallet.id, Number(wallet.balance));
     return {
       balance: wallet.balance,
       currency: wallet.currency,
       walletId: wallet.id,
+      ...breakdown,
     };
+  }
+
+  async getWithdrawableBreakdown(walletId: string, totalBalance: number) {
+    const lockedTransactions = await prisma.walletTransaction.findMany({
+      where: {
+        walletId,
+        status: "COMPLETED",
+        OR: [
+          { type: "FUNDING" },
+          {
+            type: "DEPOSIT",
+            metadata: {
+              path: ["nonWithdrawable"],
+              equals: true,
+            },
+          },
+        ],
+      },
+      select: { netAmount: true },
+    });
+
+    const financedBalance = lockedTransactions.reduce(
+      (sum, txn) => sum + Number(txn.netAmount),
+      0
+    );
+    const withdrawableBalance = Math.max(0, totalBalance - financedBalance);
+
+    return {
+      withdrawableBalance,
+      financedBalance,
+    };
+  }
+
+  async depositFinanced(
+    userId: string,
+    type: WalletType,
+    amount: number,
+    description: string,
+    reference?: string
+  ) {
+    if (amount <= 0) throw new AppError("Amount must be positive");
+
+    const wallet = await this.getOrCreateWallet(userId, type);
+    const txnReference =
+      reference ?? `FIN-${uuidv4().slice(0, 8).toUpperCase()}`;
+
+    return runTransaction(async (db) => {
+      const updated = await db.wallet.update({
+        where: { id: wallet.id },
+        data: { balance: { increment: amount } },
+      });
+
+      const transaction = await db.walletTransaction.create({
+        data: {
+          walletId: wallet.id,
+          type: "FUNDING",
+          status: "COMPLETED",
+          amount: new Prisma.Decimal(amount),
+          fee: 0,
+          commission: 0,
+          netAmount: new Prisma.Decimal(amount),
+          reference: txnReference,
+          description,
+          metadata: {
+            nonWithdrawable: true,
+            source: "FINANCING_DISBURSEMENT",
+          },
+        },
+      });
+
+      return { wallet: updated, transaction };
+    });
   }
 
   async getPlatformBalance() {

@@ -2,6 +2,7 @@ import { NextRequest } from "next/server";
 import { z } from "zod";
 import { paymentService } from "@/lib/services/payment/payment.service";
 import { completeWalletDeposit } from "@/lib/services/payment/payment-completion.service";
+import { isPaymentDemoMode } from "@/lib/services/payment/demo-mode";
 import { apiResponse, withAuth } from "@/lib/api/handler";
 import {
   canDeposit,
@@ -34,8 +35,33 @@ export const POST = withAuth(async (req: NextRequest, _ctx, session) => {
     description: "PayRent wallet top-up",
   });
 
-  if (payment.status === "FAILED") {
+  if (payment.status === "FAILED" && !isPaymentDemoMode()) {
     return apiResponse({ payment }, 400, payment.message ?? "Deposit failed");
+  }
+
+  if (isPaymentDemoMode()) {
+    const result = await completeWalletDeposit({
+      clientReference: payment.reference,
+      amount: parsed.data.amount,
+      provider: "demo",
+      description: `Demo wallet deposit — ${payment.reference}`,
+      userId: session.user.id,
+      walletType,
+      metadata: { demoMode: true },
+    });
+
+    return apiResponse(
+      {
+        payment: {
+          ...payment,
+          status: "SUCCESSFUL",
+          provider: "demo",
+        },
+        wallet: result,
+      },
+      200,
+      "Deposit completed successfully (demo mode)."
+    );
   }
 
   return apiResponse(

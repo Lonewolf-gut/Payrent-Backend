@@ -56,8 +56,17 @@ export class WithdrawalService {
       ? await walletService.getPlatformBalance()
       : await walletService.getBalance(userId, walletType);
 
-    if (Number(balance.balance) < amount) {
-      throw new AppError("Insufficient balance");
+    const available =
+      "withdrawableBalance" in balance
+        ? Number(balance.withdrawableBalance)
+        : Number(balance.balance);
+
+    if (available < amount) {
+      throw new AppError(
+        Number(balance.financedBalance ?? 0) > 0 && Number(balance.balance) >= amount
+          ? "Financed wallet funds cannot be withdrawn. Only self-funded deposits are withdrawable."
+          : "Insufficient balance"
+      );
     }
 
     const payoutAccount = user.bankAccounts[0];

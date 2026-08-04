@@ -55,6 +55,13 @@ export class MomoPaymentService {
       };
     }
 
+    const payment = await momoService.requestPayment({
+      amount: input.amount,
+      phone,
+      reference,
+      description: input.description ?? "PayForMe wallet deposit",
+    });
+
     await savePendingPayment(reference, {
       purpose: "WALLET_DEPOSIT",
       userId: input.userId,
@@ -65,13 +72,6 @@ export class MomoPaymentService {
       phone,
       provider: "momo",
       momoReferenceId: payment.momoReferenceId,
-    });
-
-    const payment = await momoService.requestPayment({
-      amount: input.amount,
-      phone,
-      reference,
-      description: input.description ?? "PayForMe wallet deposit",
     });
 
     return {
@@ -107,6 +107,13 @@ export class MomoPaymentService {
     const amount = getSubscriptionPrice(input.plan, input.billingCycle);
     const reference = this.buildReference("SUB");
 
+    const payment = await momoService.requestPayment({
+      amount,
+      phone,
+      reference,
+      description: `PayForMe ${input.plan} subscription`,
+    });
+
     await savePendingPayment(reference, {
       purpose: "SUBSCRIPTION",
       userId: input.userId,
@@ -116,13 +123,6 @@ export class MomoPaymentService {
       billingCycle: input.billingCycle,
       role: input.role,
       momoReferenceId: payment.momoReferenceId,
-    });
-
-    const payment = await momoService.requestPayment({
-      amount,
-      phone,
-      reference,
-      description: `PayForMe ${input.plan} subscription`,
     });
 
     return {
