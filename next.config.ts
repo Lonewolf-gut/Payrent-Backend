@@ -1,12 +1,14 @@
 import type { NextConfig } from "next";
 
-const isProductionBuild = process.env.npm_lifecycle_event === "build";
+const lifecycle = process.env.npm_lifecycle_event ?? "";
+const isDevServer = lifecycle === "dev" || lifecycle === "dev:turbo";
+const isProductionBuild = lifecycle === "build";
+const useStandaloneOutput = isProductionBuild && process.env.STANDALONE_BUILD === "1";
 const frontendOrigin =
   process.env.FRONTEND_URL?.replace(/\/$/, "") ?? "http://localhost:3000";
 
 const nextConfig: NextConfig = {
-  distDir: isProductionBuild ? ".next" : ".next-dev",
-  ...(isProductionBuild ? { output: "standalone" as const } : {}),
+  ...(useStandaloneOutput ? { output: "standalone" as const } : {}),
   typescript: {
     ignoreBuildErrors: true,
   },

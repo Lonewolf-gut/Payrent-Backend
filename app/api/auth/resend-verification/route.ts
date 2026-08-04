@@ -1,15 +1,20 @@
 import { prisma } from "@/lib/db/prisma";
 import { otpService } from "@/lib/services/otp.service";
 import { notificationService } from "@/lib/services/notification.service";
-import { isRealEmailConfigured } from "@/lib/services/email.service";
+import {
+  isRealEmailConfigured,
+  isMailtrapSandbox,
+  isSmtpConfigured,
+} from "@/lib/services/email.service";
 import { apiResponse, withAuth } from "@/lib/api/handler";
 
 type VerificationDelivery = {
   sent: boolean;
-  deliveryMode: "resend" | "smtp" | "ethereal" | "log" | null;
+  deliveryMode: "smtp" | "ethereal" | "log" | null;
   previewUrl: string | null;
   devCode: string | null;
   realEmailExpected: boolean;
+  mailtrapSandbox: boolean;
 };
 
 function buildDeliveryPayload(
@@ -17,26 +22,29 @@ function buildDeliveryPayload(
   emailResult: Awaited<ReturnType<typeof notificationService.deliverEmail>>
 ): VerificationDelivery {
   const deliveryMode = emailResult?.mode ?? "log";
-  const realEmail = deliveryMode === "resend" || deliveryMode === "smtp";
+  const emailConfigured = isEmailDeliveryConfigured();
+  const smtpOk = deliveryMode === "smtp" && isSmtpConfigured();
   const isDevelopment = process.env.NODE_ENV === "development";
 
   return {
     sent: true,
     deliveryMode,
     previewUrl: emailResult?.previewUrl ?? null,
-    devCode: isDevelopment && !realEmail ? code : null,
-    realEmailExpected: realEmail,
+    devCode: isDevelopment && !emailConfigured ? code : null,
+    realEmailExpected: emailConfigured,
+    mailtrapSandbox: isMailtrapSandbox(),
   };
 }
 
 function buildStatusPayload(pendingCode: string | null) {
   const isDevelopment = process.env.NODE_ENV === "development";
-  const emailConfigured = isRealEmailConfigured();
+  const emailConfigured = isEmailDeliveryConfigured();
 
   return {
     hasPendingCode: Boolean(pendingCode),
     devCode: isDevelopment && pendingCode && !emailConfigured ? pendingCode : null,
     realEmailExpected: emailConfigured,
+    mailtrapSandbox: isMailtrapSandbox(),
     isDevelopment,
   };
 }
