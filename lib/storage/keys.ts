@@ -15,6 +15,7 @@ const PRIVATE_CATEGORIES = new Set<StorageCategory>([
   "financing-docs",
   "mandates",
   "properties/documents",
+  "profiles",
 ]);
 
 export function isPrivateCategory(category: StorageCategory) {

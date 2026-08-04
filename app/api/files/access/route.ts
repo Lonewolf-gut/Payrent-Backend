@@ -9,6 +9,7 @@ const accessSchema = z.discriminatedUnion("scope", [
   z.object({ scope: z.literal("application"), documentId: z.string().cuid() }),
   z.object({ scope: z.literal("mandate"), mandateId: z.string().cuid() }),
   z.object({ scope: z.literal("property-document"), fileKey: z.string().min(3) }),
+  z.object({ scope: z.literal("profile") }),
 ]);
 
 export const POST = withAuth(async (req: NextRequest, _ctx, session) => {

@@ -1603,6 +1603,34 @@ export class KycService {
       return requiresManualReview(data);
     });
   }
+
+  async getApprovedKycHistory() {
+    return prisma.verification.findMany({
+      where: {
+        status: "APPROVED",
+        type: {
+          in: ["KYC", "IDENTITY", "KYB", "BANK", "EMPLOYMENT", "ADDRESS"],
+        },
+      },
+      include: {
+        user: {
+          select: {
+            id: true,
+            email: true,
+            phone: true,
+            role: true,
+            tenant: { select: { fullName: true, companyName: true } },
+            landlord: { select: { fullName: true, companyName: true } },
+            lender: { select: { fullName: true, institutionName: true } },
+            agentProfile: { select: { fullName: true } },
+          },
+        },
+        documents: true,
+      },
+      orderBy: { verifiedAt: "desc" },
+      take: 200,
+    });
+  }
 }
 
 export const kycService = new KycService();

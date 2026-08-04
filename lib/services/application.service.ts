@@ -77,13 +77,51 @@ export class ApplicationService {
   }
 
   async listForTenant(tenantId: string) {
-    return prisma.propertyApplication.findMany({
+    const tenant = await prisma.tenant.findUnique({
+      where: { id: tenantId },
+      select: { userId: true },
+    });
+
+    const apps = await prisma.propertyApplication.findMany({
       where: { tenantId },
       include: {
         property: { include: { images: { take: 1 }, landlord: true } },
         documents: true,
+        financingRequests: { select: { id: true, status: true } },
       },
       orderBy: { createdAt: "desc" },
+    });
+
+    if (!tenant) return apps;
+
+    const payments = await prisma.walletTransaction.findMany({
+      where: {
+        wallet: { userId: tenant.userId, type: "BUYER" },
+        type: "PAYMENT",
+        status: "COMPLETED",
+      },
+      select: { metadata: true },
+    });
+
+    const paidApplicationIds = new Set(
+      payments
+        .map((payment) => (payment.metadata as { applicationId?: string } | null)?.applicationId)
+        .filter((id): id is string => Boolean(id))
+    );
+
+    return apps.map((app) => {
+      const paidWithCash = paidApplicationIds.has(app.id);
+      const hasFinancing = app.financingRequests.length > 0;
+
+      return {
+        ...app,
+        paymentMethod: paidWithCash ? "CASH" : hasFinancing ? "FINANCING" : null,
+        paymentLabel: paidWithCash
+          ? "Paid with wallet (cash)"
+          : hasFinancing
+            ? "Financing requested"
+            : null,
+      };
     });
   }
 

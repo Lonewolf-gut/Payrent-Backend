@@ -29,7 +29,7 @@ export async function saveProfileImage(file: File, ownerId: string) {
     ownerId,
     kind: "image",
   });
-  return getPublicFileUrl(stored.key) ?? stored.key;
+  return stored.key;
 }
 
 export { deleteStoredFile };

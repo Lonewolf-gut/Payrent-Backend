@@ -8,14 +8,16 @@ export type FileAccessScope =
   | "financing"
   | "application"
   | "mandate"
-  | "property-document";
+  | "property-document"
+  | "profile";
 
 type AccessRequest =
   | { scope: "kyc"; documentId: string }
   | { scope: "financing"; documentId: string }
   | { scope: "application"; documentId: string }
   | { scope: "mandate"; mandateId: string }
-  | { scope: "property-document"; fileKey: string };
+  | { scope: "property-document"; fileKey: string }
+  | { scope: "profile" };
 
 async function assertKycDocumentAccess(documentId: string, userId: string, role: string) {
   const document = await prisma.kycDocument.findUnique({
@@ -165,6 +167,18 @@ export async function resolveProtectedFileAccess(params: {
       entity = "PropertyDocument";
       entityId = fileKey;
       fileName = fileKey.split("/").pop() ?? "property-document";
+      break;
+    }
+    case "profile": {
+      const user = await prisma.user.findUnique({
+        where: { id: params.userId },
+        select: { image: true },
+      });
+      if (!user?.image) throw new Error("Profile image not found.");
+      fileKey = normalizeStoredFileReference(user.image);
+      entity = "User";
+      entityId = params.userId;
+      fileName = "profile-image";
       break;
     }
   }
