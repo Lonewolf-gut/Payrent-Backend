@@ -1538,7 +1538,7 @@ export class KycService {
       where: {
         status: "PENDING",
         type: {
-          in: ["KYC", "IDENTITY", "KYB", "BANK", "EMPLOYMENT", "ADDRESS"],
+          in: ["KYC", "IDENTITY", "KYB", "EMPLOYMENT", "ADDRESS"],
         },
       },
       include: {
@@ -1609,7 +1609,7 @@ export class KycService {
       where: {
         status: "APPROVED",
         type: {
-          in: ["KYC", "IDENTITY", "KYB", "BANK", "EMPLOYMENT", "ADDRESS"],
+          in: ["KYC", "IDENTITY", "KYB", "EMPLOYMENT", "ADDRESS"],
         },
       },
       include: {

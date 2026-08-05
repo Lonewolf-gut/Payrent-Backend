@@ -4,7 +4,7 @@ import { apiResponse, withAuth } from "@/lib/api/handler";
 export const GET = withAuth(
   async (req) => {
     const page = parseInt(req.nextUrl.searchParams.get("page") ?? "1", 10);
-    const limit = 30;
+    const limit = Math.min(parseInt(req.nextUrl.searchParams.get("limit") ?? "30", 10), 500);
     const skip = (page - 1) * limit;
 
     const [transactions, total, commissionSum] = await Promise.all([
@@ -36,7 +36,6 @@ export const GET = withAuth(
       transactions,
       total,
       totalCommission: commissionSum._sum.totalFee ?? 0,
-      auditLogs,
       page,
       limit,
     });
