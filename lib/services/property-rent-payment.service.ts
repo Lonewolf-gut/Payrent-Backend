@@ -39,25 +39,15 @@ export class PropertyRentPaymentService {
             id: applicationId,
             propertyId,
             tenantId: tenant.id,
-            status: "APPROVED",
           },
         })
       : await prisma.propertyApplication.findFirst({
           where: {
             propertyId,
             tenantId: tenant.id,
-            status: "APPROVED",
           },
           orderBy: { createdAt: "desc" },
         });
-
-    if (!application) {
-      throw new AppError(
-        "An approved application is required before you can pay rent for this property.",
-        400,
-        "APPLICATION_REQUIRED"
-      );
-    }
 
     const amount = Number(property.monthlyRent);
     if (amount <= 0) throw new AppError("Invalid rent amount", 400);
@@ -73,7 +63,7 @@ export class PropertyRentPaymentService {
 
     const commissionAgent = await agentCommissionService.resolveCommissionAgent(
       propertyId,
-      application.referredAgentProfileId
+      application?.referredAgentProfileId ?? null
     );
 
     const landlordWallet = await walletService.getOrCreateWallet(
@@ -111,7 +101,10 @@ export class PropertyRentPaymentService {
           netAmount: new Prisma.Decimal(amount),
           reference,
           description: `Rent payment: ${property.name}`,
-          metadata: { propertyId, applicationId: application.id },
+          metadata: {
+            propertyId,
+            ...(application ? { applicationId: application.id } : {}),
+          },
         },
       });
 
