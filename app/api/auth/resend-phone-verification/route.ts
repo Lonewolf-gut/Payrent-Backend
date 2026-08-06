@@ -1,18 +1,12 @@
 import { z } from "zod";
 import { prisma } from "@/lib/db/prisma";
 import { authService } from "@/lib/services/auth.service";
+import { shouldExposeOtpCodes } from "@/lib/auth/expose-otp";
 import { apiResponse, withAuth } from "@/lib/api/handler";
 
 const phoneInputSchema = z.object({
   phone: z.string().trim().min(10).max(15).optional(),
 });
-
-function isDevEnvironment() {
-  return (
-    process.env.NODE_ENV === "development" ||
-    process.env.SHOW_DEV_OTP === "true"
-  );
-}
 
 function isSmsConfigured() {
   const smsProvider = (process.env.SMS_PROVIDER || "log").trim().toLowerCase();
@@ -21,15 +15,14 @@ function isSmsConfigured() {
 
 function buildStatusPayload(pendingCode: string | null, phone: string | null) {
   const smsConfigured = isSmsConfigured();
-  const isDevelopment = isDevEnvironment();
+  const exposeCode = shouldExposeOtpCodes() || !smsConfigured;
 
   return {
     phone,
     hasPendingCode: Boolean(pendingCode),
-    devCode:
-      pendingCode && (!smsConfigured || isDevelopment) ? pendingCode : null,
+    devCode: pendingCode && exposeCode ? pendingCode : null,
     smsConfigured,
-    isDevelopment,
+    isDevelopment: shouldExposeOtpCodes(),
   };
 }
 
@@ -39,19 +32,16 @@ function buildDeliveryPayload(
   smsProvider: string
 ) {
   const smsConfigured = smsProvider !== "log";
-  const isDevelopment = isDevEnvironment();
-  const smsDelivered = smsConfigured && !isDevelopment;
+  const exposeCode = shouldExposeOtpCodes() || !smsConfigured;
 
   return {
     phone,
-    sent: smsDelivered,
-    devCode: !smsDelivered ? code : null,
+    sent: smsConfigured && !exposeCode,
+    devCode: exposeCode ? code : null,
     smsConfigured,
-    isDevelopment,
-    deliveryHint: !smsDelivered
-      ? isDevelopment
-        ? "Use the verification code shown below."
-        : "SMS is not configured on the server. Use the code shown below."
+    isDevelopment: shouldExposeOtpCodes(),
+    deliveryHint: exposeCode
+      ? "Use the verification code shown below."
       : "Check your phone for the verification SMS.",
   };
 }
