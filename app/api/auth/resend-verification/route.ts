@@ -4,35 +4,73 @@ import { notificationService } from "@/lib/services/notification.service";
 import {
   isEmailDeliveryConfigured,
   isMailtrapSandbox,
-  isSmtpConfigured,
+  type EmailSendResult,
 } from "@/lib/services/email.service";
 import { apiResponse, withAuth } from "@/lib/api/handler";
 
 type VerificationDelivery = {
   sent: boolean;
-  deliveryMode: "smtp" | "ethereal" | "log" | null;
+  deliveryMode: "smtp" | "ethereal" | "log" | "resend" | null;
   previewUrl: string | null;
   devCode: string | null;
   realEmailExpected: boolean;
   mailtrapSandbox: boolean;
+  emailError: string | null;
+  deliveryHint: string | null;
 };
+
+function wasEmailDelivered(emailResult: EmailSendResult | null | undefined) {
+  if (!emailResult) return false;
+  if (emailResult.error) return false;
+  return emailResult.mode !== "log";
+}
+
+function buildDeliveryHint(params: {
+  delivered: boolean;
+  emailConfigured: boolean;
+  emailError: string | null;
+  isDevelopment: boolean;
+}) {
+  if (params.delivered) {
+    return "Check your inbox and spam folder for the verification email.";
+  }
+
+  if (params.emailError) {
+    return `Email could not be sent: ${params.emailError}`;
+  }
+
+  if (!params.emailConfigured) {
+    return params.isDevelopment
+      ? "Email is not configured on the server. Use the code shown below."
+      : "Email delivery is not configured. Contact support for help verifying your account.";
+  }
+
+  return "We could not confirm email delivery. Use the code below or try resend again.";
+}
 
 function buildDeliveryPayload(
   code: string,
   emailResult: Awaited<ReturnType<typeof notificationService.deliverEmail>>
 ): VerificationDelivery {
-  const deliveryMode = emailResult?.mode ?? "log";
+  const delivered = wasEmailDelivered(emailResult);
   const emailConfigured = isEmailDeliveryConfigured();
-  const smtpOk = deliveryMode === "smtp" && isSmtpConfigured();
   const isDevelopment = process.env.NODE_ENV === "development";
+  const emailError = emailResult?.error ?? null;
 
   return {
-    sent: true,
-    deliveryMode,
+    sent: delivered,
+    deliveryMode: emailResult?.mode ?? "log",
     previewUrl: emailResult?.previewUrl ?? null,
-    devCode: isDevelopment && !emailConfigured ? code : null,
-    realEmailExpected: emailConfigured,
+    devCode: !delivered ? code : null,
+    realEmailExpected: emailConfigured && delivered,
     mailtrapSandbox: isMailtrapSandbox(),
+    emailError,
+    deliveryHint: buildDeliveryHint({
+      delivered,
+      emailConfigured,
+      emailError,
+      isDevelopment,
+    }),
   };
 }
 
@@ -42,10 +80,21 @@ function buildStatusPayload(pendingCode: string | null) {
 
   return {
     hasPendingCode: Boolean(pendingCode),
-    devCode: isDevelopment && pendingCode && !emailConfigured ? pendingCode : null,
+    devCode: pendingCode && !emailConfigured ? pendingCode : null,
     realEmailExpected: emailConfigured,
     mailtrapSandbox: isMailtrapSandbox(),
     isDevelopment,
+    sent: false,
+    deliveryMode: null,
+    previewUrl: null,
+    emailError: null,
+    deliveryHint: pendingCode
+      ? emailConfigured
+        ? "A verification code is already active. Resend if you did not receive the email."
+        : isDevelopment
+          ? "Use the verification code shown below."
+          : null
+      : null,
   };
 }
 

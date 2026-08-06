@@ -75,17 +75,29 @@ export class NotificationService {
 
   async deliverEmail(userId: string, subject: string, body: string) {
     const user = await prisma.user.findUnique({ where: { id: userId } });
-    if (!user?.email) return null;
+    if (!user?.email) {
+      return {
+        queued: false,
+        mode: "log" as const,
+        error: "User email address is missing",
+      };
+    }
 
     try {
       return await sendEmail({
         to: user.email,
         subject: `[PayForMe] ${subject}`,
         html: buildEmailTemplate(subject, body),
+        text: body,
       });
     } catch (error) {
-      logger.error("Email delivery failed", { userId, error: String(error) });
-      return null;
+      const message = error instanceof Error ? error.message : String(error);
+      logger.error("Email delivery failed", { userId, error: message });
+      return {
+        queued: false,
+        mode: "log" as const,
+        error: message,
+      };
     }
   }
 
