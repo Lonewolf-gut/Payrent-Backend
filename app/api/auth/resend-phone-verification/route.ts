@@ -14,17 +14,45 @@ function isDevEnvironment() {
   );
 }
 
-function buildStatusPayload(pendingCode: string | null, phone: string | null) {
+function isSmsConfigured() {
   const smsProvider = (process.env.SMS_PROVIDER || "log").trim().toLowerCase();
+  return smsProvider !== "log";
+}
+
+function buildStatusPayload(pendingCode: string | null, phone: string | null) {
+  const smsConfigured = isSmsConfigured();
   const isDevelopment = isDevEnvironment();
 
   return {
     phone,
     hasPendingCode: Boolean(pendingCode),
-    devCode: isDevelopment && pendingCode ? pendingCode : null,
-    code: isDevelopment && pendingCode ? pendingCode : null,
-    smsConfigured: smsProvider !== "log",
+    devCode:
+      pendingCode && (!smsConfigured || isDevelopment) ? pendingCode : null,
+    smsConfigured,
     isDevelopment,
+  };
+}
+
+function buildDeliveryPayload(
+  code: string,
+  phone: string | null | undefined,
+  smsProvider: string
+) {
+  const smsConfigured = smsProvider !== "log";
+  const isDevelopment = isDevEnvironment();
+  const smsDelivered = smsConfigured && !isDevelopment;
+
+  return {
+    phone,
+    sent: smsDelivered,
+    devCode: !smsDelivered ? code : null,
+    smsConfigured,
+    isDevelopment,
+    deliveryHint: !smsDelivered
+      ? isDevelopment
+        ? "Use the verification code shown below."
+        : "SMS is not configured on the server. Use the code shown below."
+      : "Check your phone for the verification SMS.",
   };
 }
 
@@ -60,15 +88,7 @@ export const POST = withAuth(async (req, _ctx, session) => {
     parsed.data.phone
   );
 
-  const smsProvider = result.smsProvider;
-  const isDevelopment = isDevEnvironment();
-
-  return apiResponse({
-    phone: result.phone,
-    sent: smsProvider !== "log",
-    devCode: isDevelopment ? result.code : null,
-    code: isDevelopment ? result.code : null,
-    smsConfigured: smsProvider !== "log",
-    isDevelopment,
-  });
+  return apiResponse(
+    buildDeliveryPayload(result.code, result.phone, result.smsProvider)
+  );
 });
