@@ -26,12 +26,6 @@ export const GET = withAuth(
       prisma.commission.aggregate({ _sum: { totalFee: true } }),
     ]);
 
-    const auditLogs = await prisma.auditLog.findMany({
-      take: 20,
-      orderBy: { createdAt: "desc" },
-      include: { user: { select: { email: true } } },
-    });
-
     return apiResponse({
       transactions,
       total,

@@ -2,7 +2,7 @@ import { prisma } from "@/lib/db/prisma";
 import { otpService } from "@/lib/services/otp.service";
 import { notificationService } from "@/lib/services/notification.service";
 import {
-  isRealEmailConfigured,
+  isEmailDeliveryConfigured,
   isMailtrapSandbox,
   isSmtpConfigured,
 } from "@/lib/services/email.service";

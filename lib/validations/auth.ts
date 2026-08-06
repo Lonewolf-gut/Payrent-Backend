@@ -22,7 +22,10 @@ export const registerSchema = z.object({
   email: normalizedEmail,
   password: passwordSchema,
   fullName: z.string().min(2, "Please enter your full name"),
-  phone: z.string().min(10, "Please enter a valid phone number").optional(),
+  phone: z.preprocess(
+    (value) => (typeof value === "string" && !value.trim() ? undefined : value),
+    z.string().min(10, "Please enter a valid phone number").optional()
+  ),
   role: z.enum(["BUYER", "MERCHANT", "MARKETER", "LENDER"]),
   entityType: z.enum(["INDIVIDUAL", "COMPANY"]).optional(),
   companyName: z.string().min(2).optional(),

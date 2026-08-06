@@ -44,6 +44,11 @@ export function isRealEmailConfigured() {
   return isResendConfigured() || isSmtpConfigured();
 }
 
+/** Alias used by verification routes */
+export function isEmailDeliveryConfigured() {
+  return isRealEmailConfigured();
+}
+
 export function getEmailFromAddress() {
   return process.env.SMTP_FROM ?? process.env.RESEND_FROM ?? "PayForMe <onboarding@resend.dev>";
 }
