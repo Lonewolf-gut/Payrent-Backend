@@ -7,9 +7,16 @@ const phoneInputSchema = z.object({
   phone: z.string().trim().min(10).max(15).optional(),
 });
 
+function isDevEnvironment() {
+  return (
+    process.env.NODE_ENV === "development" ||
+    process.env.SHOW_DEV_OTP === "true"
+  );
+}
+
 function buildStatusPayload(pendingCode: string | null, phone: string | null) {
   const smsProvider = (process.env.SMS_PROVIDER || "log").trim().toLowerCase();
-  const isDevelopment = process.env.NODE_ENV === "development";
+  const isDevelopment = isDevEnvironment();
 
   return {
     phone,
@@ -54,7 +61,7 @@ export const POST = withAuth(async (req, _ctx, session) => {
   );
 
   const smsProvider = result.smsProvider;
-  const isDevelopment = process.env.NODE_ENV === "development";
+  const isDevelopment = isDevEnvironment();
 
   return apiResponse({
     phone: result.phone,
