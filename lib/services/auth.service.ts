@@ -133,34 +133,43 @@ export class AuthService {
             ? "MARKETER"
             : "LENDER";
 
-    await walletService.getOrCreateWallet(user.id, walletType);
-
-    await prisma.subscription.create({
-      data: { userId: user.id, plan: "FREE", status: "ACTIVE" },
+    await safeRegisterSideEffect("wallet", async () => {
+      await walletService.getOrCreateWallet(user.id, walletType);
     });
 
-    const otp = await otpService.create(user.id, "EMAIL_VERIFY");
-    await notificationService.create({
-      userId: user.id,
-      title: "Verify your email",
-      body: `Your verification code is: ${otp}. It expires in 15 minutes.`,
-      channel: "IN_APP",
-      sendEmail: false,
-    });
-
-    const emailResult = await notificationService.deliverEmail(
-      user.id,
-      "Verify your email",
-      `Your verification code is: ${otp}\n\nIt expires in 15 minutes. Enter this code on the verify email page to unlock your dashboard.`
-    );
-
-    if (emailResult?.previewUrl) {
-      const { logger } = await import("@/lib/logger");
-      logger.info("Open this link to view the verification email", {
-        previewUrl: emailResult.previewUrl,
-        email: user.email,
+    await safeRegisterSideEffect("subscription", async () => {
+      await prisma.subscription.create({
+        data: { userId: user.id, plan: "FREE", status: "ACTIVE" },
       });
-    }
+    });
+
+    await safeRegisterSideEffect("verification-setup", async () => {
+      const otp = await otpService.create(user.id, "EMAIL_VERIFY");
+      await notificationService.create({
+        userId: user.id,
+        title: "Verify your email",
+        body: `Your verification code is: ${otp}. It expires in 15 minutes.`,
+        channel: "IN_APP",
+        sendEmail: false,
+      });
+
+      void notificationService
+        .deliverEmail(
+          user.id,
+          "Verify your email",
+          `Your verification code is: ${otp}\n\nIt expires in 15 minutes. Enter this code on the verify email page to unlock your dashboard.`
+        )
+        .then((emailResult) => {
+          if (!emailResult?.previewUrl) return;
+          return import("@/lib/logger").then(({ logger }) => {
+            logger.info("Open this link to view the verification email", {
+              previewUrl: emailResult.previewUrl,
+              email: user.email,
+            });
+          });
+        })
+        .catch(() => undefined);
+    });
 
     const displayName =
       getProfileDisplayName({

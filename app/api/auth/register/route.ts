@@ -15,7 +15,15 @@ function requestContext(req: NextRequest) {
 }
 
 export const POST = withPublicHandler(async (req: NextRequest) => {
-  const body = await req.json();
+  let body: unknown;
+  try {
+    body = await req.json();
+  } catch {
+    return apiError(
+      new AppError("Invalid registration request. Please refresh and try again.", 400)
+    );
+  }
+
   const parsed = registerSchema.safeParse(body);
   if (!parsed.success) {
     return apiError(
