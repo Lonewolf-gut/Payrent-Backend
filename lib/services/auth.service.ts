@@ -28,6 +28,19 @@ export type RegisterContext = {
   userAgent?: string;
 };
 
+async function safeRegisterSideEffect(
+  step: string,
+  fn: () => Promise<unknown>
+): Promise<void> {
+  try {
+    await fn();
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    const { logger } = await import("@/lib/logger");
+    logger.error(`Registration post-step failed: ${step}`, { error: message });
+  }
+}
+
 const SUBSCRIPTION_LIMITS = {
   FREE: { propertyViews: 3, financingRequests: 1 },
   PRO: { propertyViews: 20, financingRequests: 5 },
@@ -57,7 +70,7 @@ export class AuthService {
       const created = await db.user.create({
         data: {
           email: input.email,
-          phone: input.phone,
+          phone: input.phone ?? null,
           passwordHash,
           role: input.role as UserRole,
           ...(roleRequiresSubscription(input.role as UserRole)
@@ -156,67 +169,77 @@ export class AuthService {
         companyName: input.companyName ?? null,
       }) ?? input.fullName;
 
-    const roleLabel = formatRoleLabel(input.role);
-    const welcomeBody = [
-      `Hi ${displayName}, welcome to ${PLATFORM_NAME}!`,
-      "",
-      `Your ${roleLabel} account has been created successfully. We're glad to have you on Ghana's trusted rental finance marketplace.`,
-      "",
-      "Here's what to do next:",
-      "1. Verify your email using the code we sent in a separate email",
-      "2. Complete your profile and KYC verification",
-      "3. Explore your dashboard and start using PayForMe",
-      "",
-      `If you did not create this account, please contact ${SUPPORT_EMAIL} immediately.`,
-    ].join("\n");
+    await safeRegisterSideEffect("welcome-notification", async () => {
+      const roleLabel = formatRoleLabel(input.role);
+      const welcomeBody = [
+        `Hi ${displayName}, welcome to ${PLATFORM_NAME}!`,
+        "",
+        `Your ${roleLabel} account has been created successfully. We're glad to have you on Ghana's trusted rental finance marketplace.`,
+        "",
+        "Here's what to do next:",
+        "1. Verify your email using the code we sent in a separate email",
+        "2. Complete your profile and KYC verification",
+        "3. Explore your dashboard and start using PayForMe",
+        "",
+        `If you did not create this account, please contact ${SUPPORT_EMAIL} immediately.`,
+      ].join("\n");
 
-    await notificationService.create({
-      userId: user.id,
-      title: "Welcome to PayForMe",
-      body: welcomeBody,
-      channel: "IN_APP",
-      sendEmail: false,
-    });
-
-    const welcomeEmailResult = await sendEmail({
-      to: user.email,
-      subject: `[PayForMe] Welcome to PayForMe — your account is ready`,
-      html: buildEmailTemplate("Welcome to PayForMe", welcomeBody),
-      text: welcomeBody,
-    });
-
-    if (welcomeEmailResult?.previewUrl) {
-      const { logger } = await import("@/lib/logger");
-      logger.info("Open this link to view the welcome email", {
-        previewUrl: welcomeEmailResult.previewUrl,
-        email: user.email,
+      await notificationService.create({
+        userId: user.id,
+        title: "Welcome to PayForMe",
+        body: welcomeBody,
+        channel: "IN_APP",
+        sendEmail: false,
       });
-    }
 
-    await notifyAllAdminsInAppAndEmail(
-      "New account registered",
-      `${displayName} (${formatRoleLabel(input.role)}) registered with ${user.email}. Account is pending email verification.`
-    );
+      const welcomeEmailResult = await sendEmail({
+        to: user.email,
+        subject: `[PayForMe] Welcome to PayForMe — your account is ready`,
+        html: buildEmailTemplate("Welcome to PayForMe", welcomeBody),
+        text: welcomeBody,
+      });
 
-    await auditService.log({
-      userId: user.id,
-      action: "USER_REGISTERED",
-      entity: "User",
-      entityId: user.id,
-      ipAddress: context?.ipAddress,
-      userAgent: context?.userAgent,
+      if (welcomeEmailResult?.previewUrl) {
+        const { logger } = await import("@/lib/logger");
+        logger.info("Open this link to view the welcome email", {
+          previewUrl: welcomeEmailResult.previewUrl,
+          email: user.email,
+        });
+      }
     });
 
-    await consentService.recordRegistrationConsents(user.id, {
-      ipAddress: context?.ipAddress,
-      userAgent: context?.userAgent,
-      metadata: { role: input.role },
+    await safeRegisterSideEffect("admin-notification", async () => {
+      await notifyAllAdminsInAppAndEmail(
+        "New account registered",
+        `${displayName} (${formatRoleLabel(input.role)}) registered with ${user.email}. Account is pending email verification.`
+      );
     });
 
-    const { verificationReminderService } = await import(
-      "@/lib/services/verification-reminder.service"
-    );
-    await verificationReminderService.notifyIfUnverified(user.id, user.role);
+    await safeRegisterSideEffect("audit-log", async () => {
+      await auditService.log({
+        userId: user.id,
+        action: "USER_REGISTERED",
+        entity: "User",
+        entityId: user.id,
+        ipAddress: context?.ipAddress,
+        userAgent: context?.userAgent,
+      });
+    });
+
+    await safeRegisterSideEffect("registration-consents", async () => {
+      await consentService.recordRegistrationConsents(user.id, {
+        ipAddress: context?.ipAddress,
+        userAgent: context?.userAgent,
+        metadata: { role: input.role },
+      });
+    });
+
+    await safeRegisterSideEffect("verification-reminder", async () => {
+      const { verificationReminderService } = await import(
+        "@/lib/services/verification-reminder.service"
+      );
+      await verificationReminderService.notifyIfUnverified(user.id, user.role);
+    });
 
     return { userId: user.id, email: user.email, role: user.role };
   }

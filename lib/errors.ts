@@ -66,10 +66,10 @@ export function handleApiError(error: unknown): {
     };
   }
 
-  if (prismaCode === "P2022") {
+  if (prismaCode === "P2021" || prismaCode === "P2022") {
     return {
       message:
-        "Your listing could not be saved because the database is missing a required column. Please run database migrations and try again.",
+        "The database schema is out of date. In the backend project folder, run: npm run db:push",
       statusCode: 503,
       code: "SCHEMA_MISMATCH",
     };
