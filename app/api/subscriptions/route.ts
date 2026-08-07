@@ -5,6 +5,7 @@ import { getSubscriptionAccess } from "@/lib/subscription/access";
 import { roleRequiresSubscription } from "@/lib/subscription/roles";
 import { AppError } from "@/lib/errors";
 import { apiResponse, withAuth } from "@/lib/api/handler";
+import { isPaymentDemoMode } from "@/lib/services/payment/demo-mode";
 import type { SubscriptionPlan, BillingCycle } from "@prisma/client";
 
 export const GET = withAuth(async (_req, _ctx, session) => {
@@ -13,7 +14,12 @@ export const GET = withAuth(async (_req, _ctx, session) => {
     getSubscriptionAccess(session.user.id),
   ]);
   const features = subscriptionService.getPlanFeatures(sub?.plan ?? "FREE");
-  return apiResponse({ subscription: sub, access, ...features });
+  return apiResponse({
+    subscription: sub,
+    access,
+    ...features,
+    paymentDemoMode: isPaymentDemoMode(),
+  });
 });
 
 export const POST = withAuth(async (req: NextRequest, _ctx, session) => {
@@ -46,6 +52,29 @@ export const POST = withAuth(async (req: NextRequest, _ctx, session) => {
 
   const plan = (parsed.data.plan ?? "PRO") as SubscriptionPlan;
   const billingCycle = (parsed.data.billingCycle ?? "MONTHLY") as BillingCycle;
+
+  if (isPaymentDemoMode()) {
+    const subscription = await subscriptionService.upgrade(
+      session.user.id,
+      plan,
+      billingCycle
+    );
+
+    return apiResponse(
+      {
+        subscription,
+        checkout: {
+          provider: "demo",
+          status: "SUCCESSFUL",
+          demoCompleted: true,
+          plan,
+          billingCycle,
+        },
+      },
+      200,
+      `${plan === "MAX" ? "Max" : "Pro"} plan activated immediately (demo mode — no payment collected).`
+    );
+  }
 
   if (!parsed.data.bankAccountId) {
     throw new AppError(
