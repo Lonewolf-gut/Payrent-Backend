@@ -29,7 +29,11 @@ export const POST = withAuth(async (req: NextRequest, _ctx, session) => {
     plan: z.enum(["PRO", "MAX", "PREMIUM"]).optional(),
     billingCycle: z.enum(["MONTHLY", "ANNUAL"]).optional(),
     paymentMethod: z.enum(["momo"]).optional(),
-    bankAccountId: z.string().cuid().optional(),
+    bankAccountId: z
+      .preprocess(
+        (value) => (value === "" || value === null || value === undefined ? undefined : value),
+        z.string().cuid().optional()
+      ),
   });
   const parsed = schema.safeParse(body);
   if (!parsed.success) return apiResponse({ error: "Invalid input" }, 400);

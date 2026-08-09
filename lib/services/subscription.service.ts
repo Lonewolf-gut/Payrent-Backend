@@ -34,10 +34,15 @@ function assertSubscriptionEligibleRole(role: UserRole) {
 
 export class SubscriptionService {
   async getCurrent(userId: string) {
-    return prisma.subscription.findFirst({
+    const active = await prisma.subscription.findMany({
       where: { userId, status: "ACTIVE" },
       orderBy: { createdAt: "desc" },
     });
+
+    if (!active.length) return null;
+
+    const paidPlan = active.find((subscription) => subscription.plan !== "FREE");
+    return paidPlan ?? active[0];
   }
 
   async upgradeWithPaystack(
