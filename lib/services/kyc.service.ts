@@ -51,6 +51,63 @@ function maskAccountNumber(accountNumber: string) {
   return `${"*".repeat(accountNumber.length - 4)}${accountNumber.slice(-4)}`;
 }
 
+type ProfileCompletionShape = {
+  employmentStatus?: string | null;
+  residentialAddress?: string | null;
+  officeAddress?: string | null;
+  occupation?: string | null;
+  employerName?: string | null;
+  institutionName?: string | null;
+  lenderType?: string | null;
+  staffId?: string | null;
+  ssnitNumber?: string | null;
+  companyName?: string | null;
+  companyRegistrationNumber?: string | null;
+  companyRegisteredAddress?: string | null;
+};
+
+function isCompanyProfileComplete(profile: ProfileCompletionShape) {
+  return Boolean(
+    profile.companyName?.trim() &&
+      profile.companyRegistrationNumber?.trim() &&
+      profile.companyRegisteredAddress?.trim()
+  );
+}
+
+function isIndividualProfileComplete(role: UserRole, profile: ProfileCompletionShape) {
+  if (!profile.employmentStatus) return false;
+
+  const address =
+    role === "MARKETER" ? profile.officeAddress : profile.residentialAddress;
+  if (!address?.trim()) return false;
+
+  if (role === "LENDER") {
+    if (!profile.institutionName?.trim() || !profile.lenderType?.trim()) {
+      return false;
+    }
+  }
+
+  if (requiresEmploymentDocuments(profile.employmentStatus)) {
+    if (!profile.staffId?.trim() || !profile.ssnitNumber?.trim()) {
+      return false;
+    }
+  }
+
+  return true;
+}
+
+function resolveProfileStatus(
+  role: UserRole,
+  entityType: EntityType,
+  profile: ProfileCompletionShape
+) {
+  const complete =
+    entityType === "COMPANY"
+      ? isCompanyProfileComplete(profile)
+      : isIndividualProfileComplete(role, profile);
+  return complete ? "PROFILE_COMPLETED" : "INCOMPLETE";
+}
+
 type VerificationData = {
   entityType?: EntityType;
   documentType?: string;
@@ -203,19 +260,36 @@ export class KycService {
         : {};
 
     if (role === "BUYER") {
+      const existing = await prisma.tenant.findUnique({ where: { userId } });
+      if (!existing) throw new AppError("Customer profile not found", 404);
+
+      const mergedProfile: ProfileCompletionShape = {
+        employmentStatus: input.employmentStatus ?? existing.employmentStatus,
+        residentialAddress: input.residentialAddress ?? existing.residentialAddress,
+        occupation: input.occupation ?? existing.occupation,
+        employerName: input.employerName ?? existing.employerName,
+        staffId: input.staffId ?? existing.staffId,
+        ssnitNumber: input.ssnitNumber ?? existing.ssnitNumber,
+        companyName: input.companyName ?? existing.companyName,
+        companyRegistrationNumber:
+          input.companyRegistrationNumber ?? existing.companyRegistrationNumber,
+        companyRegisteredAddress:
+          input.companyRegisteredAddress ?? existing.companyRegisteredAddress,
+      };
+
       const updated = await prisma.tenant.update({
         where: { userId },
         data: {
-          profileStatus: "PROFILE_COMPLETED",
+          profileStatus: resolveProfileStatus(role, entityType, mergedProfile),
           ...companyData,
           ...employmentData,
           ...(input.dateOfBirth ? { dateOfBirth: new Date(input.dateOfBirth) } : {}),
-          occupation: input.occupation,
-          employerName: input.employerName,
-          staffId: input.staffId,
-          ssnitNumber: input.ssnitNumber,
-          monthlyIncome: input.monthlyIncome,
-          residentialAddress: input.residentialAddress,
+          occupation: input.occupation ?? existing.occupation,
+          employerName: input.employerName ?? existing.employerName,
+          staffId: input.staffId ?? existing.staffId,
+          ssnitNumber: input.ssnitNumber ?? existing.ssnitNumber,
+          monthlyIncome: input.monthlyIncome ?? existing.monthlyIncome,
+          residentialAddress: input.residentialAddress ?? existing.residentialAddress,
         },
       });
       await auditService.log({
@@ -228,19 +302,36 @@ export class KycService {
     }
 
     if (role === "MERCHANT") {
+      const existing = await prisma.landlord.findUnique({ where: { userId } });
+      if (!existing) throw new AppError("Merchant profile not found", 404);
+
+      const mergedProfile: ProfileCompletionShape = {
+        employmentStatus: input.employmentStatus ?? existing.employmentStatus,
+        residentialAddress: input.residentialAddress ?? existing.residentialAddress,
+        occupation: input.occupation ?? existing.occupation,
+        employerName: input.employerName ?? existing.employerName,
+        staffId: input.staffId ?? existing.staffId,
+        ssnitNumber: input.ssnitNumber ?? existing.ssnitNumber,
+        companyName: input.companyName ?? existing.companyName,
+        companyRegistrationNumber:
+          input.companyRegistrationNumber ?? existing.companyRegistrationNumber,
+        companyRegisteredAddress:
+          input.companyRegisteredAddress ?? existing.companyRegisteredAddress,
+      };
+
       const updated = await prisma.landlord.update({
         where: { userId },
         data: {
-          profileStatus: "PROFILE_COMPLETED",
+          profileStatus: resolveProfileStatus(role, entityType, mergedProfile),
           ...companyData,
           ...employmentData,
           ...(input.dateOfBirth ? { dateOfBirth: new Date(input.dateOfBirth) } : {}),
-          occupation: input.occupation,
-          employerName: input.employerName,
-          staffId: input.staffId,
-          ssnitNumber: input.ssnitNumber,
-          monthlyIncome: input.monthlyIncome,
-          residentialAddress: input.residentialAddress,
+          occupation: input.occupation ?? existing.occupation,
+          employerName: input.employerName ?? existing.employerName,
+          staffId: input.staffId ?? existing.staffId,
+          ssnitNumber: input.ssnitNumber ?? existing.ssnitNumber,
+          monthlyIncome: input.monthlyIncome ?? existing.monthlyIncome,
+          residentialAddress: input.residentialAddress ?? existing.residentialAddress,
         },
       });
       await auditService.log({
@@ -253,17 +344,29 @@ export class KycService {
     }
 
     if (role === "LENDER") {
+      const existing = await prisma.lender.findUnique({ where: { userId } });
+      if (!existing) throw new AppError("Lender profile not found", 404);
+
+      const mergedProfile: ProfileCompletionShape = {
+        employmentStatus: input.employmentStatus ?? existing.employmentStatus,
+        residentialAddress: input.residentialAddress ?? existing.residentialAddress,
+        institutionName: input.employerName ?? existing.institutionName,
+        lenderType: input.occupation ?? existing.lenderType,
+        staffId: input.staffId ?? existing.staffId,
+        ssnitNumber: input.ssnitNumber ?? existing.ssnitNumber,
+      };
+
       const updated = await prisma.lender.update({
         where: { userId },
         data: {
-          profileStatus: "PROFILE_COMPLETED",
+          profileStatus: resolveProfileStatus(role, entityType, mergedProfile),
           ...employmentData,
           ...(input.dateOfBirth ? { dateOfBirth: new Date(input.dateOfBirth) } : {}),
-          institutionName: input.employerName ?? undefined,
-          lenderType: input.occupation ?? undefined,
-          staffId: input.staffId,
-          ssnitNumber: input.ssnitNumber,
-          residentialAddress: input.residentialAddress,
+          institutionName: input.employerName ?? existing.institutionName,
+          lenderType: input.occupation ?? existing.lenderType,
+          staffId: input.staffId ?? existing.staffId,
+          ssnitNumber: input.ssnitNumber ?? existing.ssnitNumber,
+          residentialAddress: input.residentialAddress ?? existing.residentialAddress,
         },
       });
       await auditService.log({
@@ -276,15 +379,25 @@ export class KycService {
     }
 
     if (role === "MARKETER") {
+      const existing = await prisma.agentProfile.findUnique({ where: { userId } });
+      if (!existing) throw new AppError("Affiliate profile not found", 404);
+
+      const mergedProfile: ProfileCompletionShape = {
+        employmentStatus: input.employmentStatus ?? existing.employmentStatus,
+        officeAddress: input.residentialAddress ?? existing.officeAddress,
+        staffId: input.staffId ?? existing.staffId,
+        ssnitNumber: input.ssnitNumber ?? existing.ssnitNumber,
+      };
+
       const updated = await prisma.agentProfile.update({
         where: { userId },
         data: {
-          profileStatus: "PROFILE_COMPLETED",
+          profileStatus: resolveProfileStatus(role, entityType, mergedProfile),
           ...employmentData,
           ...(input.dateOfBirth ? { dateOfBirth: new Date(input.dateOfBirth) } : {}),
-          officeAddress: input.residentialAddress,
-          staffId: input.staffId,
-          ssnitNumber: input.ssnitNumber,
+          officeAddress: input.residentialAddress ?? existing.officeAddress,
+          staffId: input.staffId ?? existing.staffId,
+          ssnitNumber: input.ssnitNumber ?? existing.ssnitNumber,
         },
       });
       await auditService.log({
@@ -1008,6 +1121,8 @@ export class KycService {
           ? tenant?.residentialAddress ?? null
           : role === "MERCHANT"
             ? landlord?.residentialAddress ?? null
+            : role === "LENDER"
+              ? lender?.residentialAddress ?? null
             : role === "MARKETER"
               ? agent?.officeAddress ?? null
               : null,
