@@ -73,5 +73,5 @@ export async function getS3SignedUrl(key: string) {
 export function getS3PublicUrl(key: string) {
   const base = getPublicAssetBaseUrl();
   if (!base) return null;
-  return `${base}/${key.replace(/^public\//, "")}`;
+  return `${base}/${key}`;
 }
