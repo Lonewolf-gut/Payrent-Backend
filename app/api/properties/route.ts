@@ -4,124 +4,21 @@ import {
 } from "@/lib/integrations/documents";
 import type { Prisma, PropertyType } from "@prisma/client";
 import { NextRequest } from "next/server";
-import { propertyFilterSchema, propertySchema, normalizePropertyPayload, parseOptionalFormNumber } from "@/lib/validations/property";
+import { propertyFilterSchema, propertySchema, normalizePropertyPayload } from "@/lib/validations/property";
 import { parsePropertyFormData } from "@/lib/utils/property-form-payload";
 import { cleanAttributesForDb } from "@/lib/utils/property-form";
 import { propertyRepository } from "@/lib/repositories/property.repository";
 import { prisma } from "@/lib/db/prisma";
-import { auth } from "@/lib/auth";
 import { apiResponse, withAuth, withPublicHandler } from "@/lib/api/handler";
 import {
   getUserDisplayName,
   notifyAllAdminsInAppAndEmail,
   notifyUserInAppAndEmail,
 } from "@/lib/services/verification-notifications";
-import {
-  getPlanLimits,
-  RESIDENTIAL_TYPES,
-  isUnlimitedPlan,
-} from "@/lib/subscription-limits";
 import { assertLandlordListingLimit } from "@/lib/subscription/listing-access";
-import { getSubscriptionAccess } from "@/lib/subscription/access";
-import { roleHasUnlimitedBrowse } from "@/lib/subscription/roles";
 import { assignAgentToProperty } from "@/lib/services/agent-assignment.service";
 import { firstZodIssueMessage } from "@/lib/validations/auth";
 import type { PropertyAttributes } from "@/lib/constants/property-listing";
-
-async function getBrowsePlan(userId?: string | null, role?: string | null) {
-  if (!userId) return "FREE" as const;
-  if (role && roleHasUnlimitedBrowse(role as "BUYER" | "MERCHANT" | "MARKETER" | "LENDER" | "ADMIN")) {
-    return "MAX" as const;
-  }
-  const access = await getSubscriptionAccess(userId);
-  if (access.hasFullAccess && !access.isPaid) return "MAX" as const;
-  return access.plan;
-}
-
-async function fetchLimitedProperties(
-  filters: {
-  search?: string;
-  propertyType?: string;
-  category?: "residential" | "car" | "appliance";
-  minRent?: number;
-  maxRent?: number;
-  location?: string;
-  page: number;
-  limit: number;
-},
-  plan?: string | null
-) {
-  const limits = getPlanLimits(plan ?? "FREE") ?? getPlanLimits("FREE")!;
-  const categoryTypeFilter =
-    filters.propertyType
-      ? { propertyType: filters.propertyType as PropertyType }
-      : filters.category === "car"
-        ? { propertyType: "CAR" as PropertyType }
-        : filters.category === "appliance"
-          ? { propertyType: "APPLIANCE" as PropertyType }
-          : filters.category === "residential"
-            ? { propertyType: { in: RESIDENTIAL_TYPES } }
-            : {};
-
-  const baseWhere: Prisma.PropertyWhereInput = {
-    status: "ACTIVE",
-    ...categoryTypeFilter,
-    ...(filters.minRent && { monthlyRent: { gte: filters.minRent } }),
-    ...(filters.maxRent && { monthlyRent: { lte: filters.maxRent } }),
-    ...(filters.location && {
-      location: { contains: filters.location, mode: "insensitive" },
-    }),
-    ...(filters.search && {
-      OR: [
-        { name: { contains: filters.search, mode: "insensitive" } },
-        { description: { contains: filters.search, mode: "insensitive" } },
-        { location: { contains: filters.search, mode: "insensitive" } },
-      ],
-    }),
-  };
-
-  const include = {
-    images: { take: 1, orderBy: { order: "asc" as const } },
-    agent: true,
-  };
-
-  const [residential, cars, appliances] = await Promise.all([
-    prisma.property.findMany({
-      where: { ...baseWhere, propertyType: { in: RESIDENTIAL_TYPES } },
-      include,
-      take: limits.residential,
-      orderBy: [{ isPremium: "desc" }, { createdAt: "desc" }],
-    }),
-    prisma.property.findMany({
-      where: { ...baseWhere, propertyType: "CAR" },
-      include,
-      take: limits.cars,
-      orderBy: [{ isPremium: "desc" }, { createdAt: "desc" }],
-    }),
-    prisma.property.findMany({
-      where: { ...baseWhere, propertyType: "APPLIANCE" },
-      include,
-      take: limits.appliances,
-      orderBy: [{ isPremium: "desc" }, { createdAt: "desc" }],
-    }),
-  ]);
-
-  const items = [...residential, ...cars, ...appliances].slice(
-    (filters.page - 1) * filters.limit,
-    filters.page * filters.limit
-  );
-
-  return {
-    items,
-    total: Math.min(
-      residential.length + cars.length + appliances.length,
-      limits.total
-    ),
-    page: filters.page,
-    limit: filters.limit,
-    planLimited: true,
-  };
-}
 
 async function assertListingLimit(userId: string, propertyType: PropertyType) {
   await assertLandlordListingLimit(userId, propertyType);
@@ -131,14 +28,6 @@ export const GET = withPublicHandler(async (req: NextRequest) => {
   const params = Object.fromEntries(req.nextUrl.searchParams);
   const parsed = propertyFilterSchema.safeParse(params);
   const filters = parsed.success ? parsed.data : propertyFilterSchema.parse({});
-
-  const session = await auth();
-  const plan = await getBrowsePlan(session?.user?.id, session?.user?.role);
-
-  if (!isUnlimitedPlan(plan)) {
-    const limited = await fetchLimitedProperties(filters, plan);
-    return apiResponse(limited);
-  }
 
   const result = await propertyRepository.findMany(filters);
   return apiResponse(result);
