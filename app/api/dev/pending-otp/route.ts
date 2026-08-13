@@ -1,8 +1,9 @@
 import { prisma } from "@/lib/db/prisma";
+import { shouldExposeOtpCodes } from "@/lib/auth/expose-otp";
 import { apiResponse, withAuth } from "@/lib/api/handler";
 
 export const GET = withAuth(async (req, _ctx, session) => {
-  if (process.env.NODE_ENV !== "development" && process.env.SHOW_DEV_OTP !== "true") {
+  if (!shouldExposeOtpCodes()) {
     return apiResponse({ error: "Not found" }, 404);
   }
 
@@ -23,5 +24,6 @@ export const GET = withAuth(async (req, _ctx, session) => {
     code: pending?.code ?? null,
     devCode: pending?.code ?? null,
     isDevelopment: true,
+    purpose,
   });
 });

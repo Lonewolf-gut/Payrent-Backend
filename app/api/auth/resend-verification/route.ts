@@ -6,7 +6,15 @@ import {
   isMailtrapSandbox,
   type EmailSendResult,
 } from "@/lib/services/email.service";
+import { shouldExposeOtpCodes } from "@/lib/auth/expose-otp";
 import { apiResponse, withAuth } from "@/lib/api/handler";
+
+function resolveEmailDevCode(code: string | null | undefined) {
+  if (!code) return null;
+  if (shouldExposeOtpCodes()) return code;
+  if (!isEmailDeliveryConfigured()) return code;
+  return null;
+}
 
 type VerificationDelivery = {
   sent: boolean;
@@ -54,15 +62,16 @@ function buildDeliveryPayload(
 ): VerificationDelivery {
   const delivered = wasEmailDelivered(emailResult);
   const emailConfigured = isEmailDeliveryConfigured();
-  const isDevelopment = process.env.NODE_ENV === "development";
+  const isDevelopment = shouldExposeOtpCodes();
   const emailError = emailResult?.error ?? null;
+  const devCode = resolveEmailDevCode(code);
 
   return {
     sent: delivered,
     deliveryMode: emailResult?.mode ?? "log",
     previewUrl: emailResult?.previewUrl ?? null,
-    devCode: !delivered ? code : null,
-    realEmailExpected: emailConfigured && delivered,
+    devCode,
+    realEmailExpected: emailConfigured && delivered && !isDevelopment,
     mailtrapSandbox: isMailtrapSandbox(),
     emailError,
     deliveryHint: buildDeliveryHint({
@@ -75,13 +84,13 @@ function buildDeliveryPayload(
 }
 
 function buildStatusPayload(pendingCode: string | null) {
-  const isDevelopment = process.env.NODE_ENV === "development";
+  const isDevelopment = shouldExposeOtpCodes();
   const emailConfigured = isEmailDeliveryConfigured();
 
   return {
     hasPendingCode: Boolean(pendingCode),
-    devCode: pendingCode && !emailConfigured ? pendingCode : null,
-    realEmailExpected: emailConfigured,
+    devCode: resolveEmailDevCode(pendingCode),
+    realEmailExpected: emailConfigured && !isDevelopment,
     mailtrapSandbox: isMailtrapSandbox(),
     isDevelopment,
     sent: false,
