@@ -2,6 +2,7 @@ import { prisma } from "@/lib/db/prisma";
 import { kycService } from "@/lib/services/kyc.service";
 import { notificationService } from "@/lib/services/notification.service";
 import { AppError } from "@/lib/errors";
+import { isApprovedListingStatus } from "@/lib/constants/property-listing-status";
 import { assertPlatformAccess } from "@/lib/subscription/access";
 import { assertAgentAssignmentLimit } from "@/lib/subscription/listing-access";
 
@@ -63,6 +64,13 @@ export async function assignAgentToProperty(
     where: { id: propertyId, landlordId: landlord.id },
   });
   if (!property) throw new AppError("Property not found", 404);
+
+  if (isApprovedListingStatus(property.status)) {
+    throw new AppError(
+      "Affiliate assignment cannot be changed after a listing is approved.",
+      403
+    );
+  }
 
   if (agentProfileId) {
     await assertPlatformAccess(landlordUserId, "assign an Affiliate to advertise listings");
