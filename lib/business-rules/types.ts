@@ -25,5 +25,5 @@ export const DEFAULT_BUSINESS_RULES: BusinessRules = {
   maxDebtToIncomePercent: 45,
   autoApproveLowRiskFinancing: true,
   lenderFreeFinancingLimit: 100,
-  merchantListingRequiresPaidPlan: true,
+  merchantListingRequiresPaidPlan: false,
 };

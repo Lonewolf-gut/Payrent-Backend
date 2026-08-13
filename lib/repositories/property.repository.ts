@@ -2,6 +2,7 @@ import { prisma } from "@/lib/db/prisma";
 import type { Prisma, PropertyStatus, PropertyType } from "@prisma/client";
 import type { PropertyFilterInput } from "@/lib/validations/property";
 import { RESIDENTIAL_TYPES } from "@/lib/subscription-limits";
+import { merchantListingPublicVisibilityWhere } from "@/lib/subscription/listing-access";
 
 export class PropertyRepository {
   async findById(id: string) {
@@ -52,6 +53,7 @@ export class PropertyRepository {
 
     const where: Prisma.PropertyWhereInput = {
       status: "ACTIVE",
+      ...merchantListingPublicVisibilityWhere(),
       ...categoryFilter,
       ...(minRent && { monthlyRent: { gte: minRent } }),
       ...(maxRent && { monthlyRent: { lte: maxRent } }),

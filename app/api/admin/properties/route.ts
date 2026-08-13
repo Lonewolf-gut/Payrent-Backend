@@ -3,6 +3,8 @@ import { prisma } from "@/lib/db/prisma";
 import { propertyRepository } from "@/lib/repositories/property.repository";
 import { notifyUserInAppAndEmail } from "@/lib/services/verification-notifications";
 import { auditService } from "@/lib/services/audit.service";
+import { getSubscriptionAccess } from "@/lib/subscription/access";
+import { merchantHasMarketplaceListingVisibility } from "@/lib/subscription/listing-access";
 import { apiResponse, withAuth } from "@/lib/api/handler";
 import type { PropertyStatus } from "@prisma/client";
 
@@ -91,10 +93,15 @@ export const PATCH = withAuth(
     const landlordUserId = existing.landlord.user.id;
 
     if (status === "ACTIVE" && existing.status !== "ACTIVE") {
+      const access = await getSubscriptionAccess(landlordUserId);
+      const marketplaceVisible = merchantHasMarketplaceListingVisibility(access);
+
       await notifyUserInAppAndEmail(
         landlordUserId,
         "Listing approved",
-        `Your listing "${existing.name}" is now active on the marketplace.`
+        marketplaceVisible
+          ? `Your listing "${existing.name}" is now live on the marketplace.`
+          : `Your listing "${existing.name}" has been approved. Subscribe to Pro or Max at /pricing to make it visible on the public properties page.`
       );
     }
 

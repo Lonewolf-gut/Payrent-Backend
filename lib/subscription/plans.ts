@@ -43,7 +43,7 @@ export const PLAN_CATALOG: Record<
     tagline: "Get started on PayForMe",
     highlight: false,
     features: [
-      "Merchants: subscription required before listing products",
+      "Merchants: list unlimited products; marketplace visibility requires Pro or Max",
       "Affiliates: 1 house, 1 car, 1 appliance (3 total) after trial",
       "Lenders: finance up to 100 properties free",
       "7-day full-access trial for merchants and affiliates",

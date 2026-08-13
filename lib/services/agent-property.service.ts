@@ -6,7 +6,7 @@ import {
 } from "@/lib/services/agent-assignment.service";
 import { notificationService } from "@/lib/services/notification.service";
 import { assertPlatformAccess } from "@/lib/subscription/access";
-import { assertAgentAssignmentLimit } from "@/lib/subscription/listing-access";
+import { assertAgentAssignmentLimit, merchantListingPublicVisibilityWhere } from "@/lib/subscription/listing-access";
 
 export class AgentPropertyService {
   async listAssigned(agentUserId: string) {
@@ -40,6 +40,7 @@ export class AgentPropertyService {
       where: {
         status: "ACTIVE",
         agentUserId: null,
+        ...merchantListingPublicVisibilityWhere(),
       },
       include: {
         images: { take: 1, orderBy: { order: "asc" } },
@@ -66,6 +67,7 @@ export class AgentPropertyService {
         id: propertyId,
         status: "ACTIVE",
         agentUserId: null,
+        ...merchantListingPublicVisibilityWhere(),
       },
       include: { landlord: { include: { user: true } } },
     });

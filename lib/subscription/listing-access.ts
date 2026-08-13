@@ -1,27 +1,48 @@
-import type { PropertyType } from "@prisma/client";
+import type { Prisma, PropertyType } from "@prisma/client";
 import { prisma } from "@/lib/db/prisma";
 import { AppError } from "@/lib/errors";
-import { getBusinessRules } from "@/lib/services/business-rules.service";
 import {
   getPlanLimits,
   getPropertyCategory,
 } from "@/lib/subscription-limits";
-import { getSubscriptionAccess, TRIAL_DAYS } from "@/lib/subscription/access";
-import { isPaidPlan } from "@/lib/subscription/plans";
+import {
+  getSubscriptionAccess,
+  type SubscriptionAccess,
+  TRIAL_DAYS,
+} from "@/lib/subscription/access";
 
-export async function assertMerchantCanCreateListing(userId: string) {
-  const [access, rules] = await Promise.all([
-    getSubscriptionAccess(userId),
-    getBusinessRules(),
-  ]);
+export function merchantHasMarketplaceListingVisibility(
+  access: SubscriptionAccess
+) {
+  return access.hasFullAccess;
+}
 
-  if (rules.merchantListingRequiresPaidPlan && !isPaidPlan(access.plan)) {
-    throw new AppError(
-      "An active merchant subscription is required before you can list products. Choose Pro or Max at /pricing.",
-      403,
-      "MERCHANT_SUBSCRIPTION_REQUIRED"
-    );
-  }
+export function merchantListingPublicVisibilityWhere(
+  now = new Date()
+): Prisma.PropertyWhereInput {
+  return {
+    OR: [
+      {
+        landlord: {
+          user: {
+            subscriptions: {
+              some: {
+                status: "ACTIVE",
+                plan: { in: ["PRO", "MAX"] },
+              },
+            },
+          },
+        },
+      },
+      {
+        landlord: {
+          user: {
+            trialEndsAt: { gt: now },
+          },
+        },
+      },
+    ],
+  };
 }
 
 export async function assertAgentAssignmentLimit(agentUserId: string) {
@@ -79,68 +100,14 @@ export async function assertAgentAssignmentLimit(agentUserId: string) {
 
 export async function assertLandlordListingLimit(
   userId: string,
-  propertyType: PropertyType
+  _propertyType: PropertyType
 ) {
-  await assertMerchantCanCreateListing(userId);
-
   const access = await getSubscriptionAccess(userId);
   if (access.trialExpired && !access.isPaid) {
     throw new AppError(
       `Your ${TRIAL_DAYS}-day trial has ended. Upgrade at /pricing to add or restore listings.`,
       403,
       "TRIAL_EXPIRED"
-    );
-  }
-  if (access.hasFullAccess) return;
-
-  const limits = getPlanLimits(access.plan);
-  if (!limits) return;
-
-  const landlord = await prisma.landlord.findUnique({ where: { userId } });
-  if (!landlord) throw new AppError("Merchant profile required", 403);
-
-  const existing = await prisma.property.findMany({
-    where: { landlordId: landlord.id, status: { not: "INACTIVE" } },
-    select: { propertyType: true },
-  });
-
-  const counts = {
-    residential: 0,
-    car: 0,
-    appliance: 0,
-    total: existing.length,
-  };
-
-  for (const property of existing) {
-    counts[getPropertyCategory(property.propertyType)] += 1;
-  }
-
-  const tierLabel = access.plan === "PRO" ? "Pro" : "Free";
-
-  if (counts.total >= limits.total) {
-    throw new AppError(
-      `${tierLabel} plan limit reached: maximum ${limits.total} total listings. Upgrade your plan for more access.`,
-      403
-    );
-  }
-
-  const category = getPropertyCategory(propertyType);
-  if (category === "residential" && counts.residential >= limits.residential) {
-    throw new AppError(
-      `${tierLabel} plan limit reached: maximum ${limits.residential} property listings. Upgrade your plan for more access.`,
-      403
-    );
-  }
-  if (category === "car" && counts.car >= limits.cars) {
-    throw new AppError(
-      `${tierLabel} plan limit reached: maximum ${limits.cars} car listings. Upgrade your plan for more access.`,
-      403
-    );
-  }
-  if (category === "appliance" && counts.appliance >= limits.appliances) {
-    throw new AppError(
-      `${tierLabel} plan limit reached: maximum ${limits.appliances} appliance listings. Upgrade your plan for more access.`,
-      403
     );
   }
 }
