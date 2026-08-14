@@ -87,8 +87,8 @@ export class AgentReferralService {
     });
   }
 
-  formatLinkUrl(origin: string, code: string, propertyId?: string | null) {
-    return buildReferralUrl(origin, code, propertyId ?? undefined);
+  formatLinkUrl(origin: string, code: string, _propertyId?: string | null) {
+    return buildReferralUrl(origin, code);
   }
 }
 
