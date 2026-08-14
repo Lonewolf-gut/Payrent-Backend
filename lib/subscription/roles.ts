@@ -13,6 +13,11 @@ export function roleRequiresSubscription(role: UserRole): role is SubscriptionEl
   return (SUBSCRIPTION_ELIGIBLE_ROLES as readonly UserRole[]).includes(role);
 }
 
+/** Subscription trials are no longer offered. */
+export function roleGetsSubscriptionTrial(_role: UserRole) {
+  return false;
+}
+
 /** Roles with fully free platform access (no subscription product). */
 export function roleHasFreePlatformAccess(role: UserRole) {
   return role === "BUYER" || role === "ADMIN" || role === "COMPLIANCE_OFFICER";

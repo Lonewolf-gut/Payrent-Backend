@@ -7,6 +7,14 @@ export const FREE_PLAN_LIMITS = {
   total: 3,
 } as const;
 
+/** Free Affiliates can promote one listing and earn commission on it. */
+export const AFFILIATE_FREE_PLAN_LIMITS = {
+  residential: 1,
+  cars: 1,
+  appliances: 1,
+  total: 1,
+} as const;
+
 export const PRO_PLAN_LIMITS = {
   residential: 10,
   cars: 5,
@@ -101,6 +109,13 @@ export function getPlanLimits(plan?: string | null): PlanLimits | null {
   if (tier === "MAX") return null;
   if (tier === "PRO") return PRO_PLAN_LIMITS;
   return FREE_PLAN_LIMITS;
+}
+
+export function getAffiliatePlanLimits(plan?: string | null): PlanLimits | null {
+  const tier = normalizePlanTier(plan);
+  if (tier === "MAX") return null;
+  if (tier === "PRO") return PRO_PLAN_LIMITS;
+  return AFFILIATE_FREE_PLAN_LIMITS;
 }
 
 export function getLimitKey(category: PropertyCategory): keyof PlanLimits {

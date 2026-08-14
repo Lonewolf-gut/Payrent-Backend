@@ -21,7 +21,7 @@ import {
   RESIDENTIAL_TYPES,
   isUnlimitedPlan,
 } from "@/lib/subscription-limits";
-import { assertLandlordListingLimit, merchantHasMarketplaceListingVisibility } from "@/lib/subscription/listing-access";
+import { assertLandlordListingLimit } from "@/lib/subscription/listing-access";
 import { getSubscriptionAccess } from "@/lib/subscription/access";
 import { roleHasUnlimitedBrowse } from "@/lib/subscription/roles";
 import { assignAgentToProperty } from "@/lib/services/agent-assignment.service";
@@ -34,7 +34,7 @@ async function getBrowsePlan(userId?: string | null, role?: string | null) {
     return "MAX" as const;
   }
   const access = await getSubscriptionAccess(userId);
-  if (access.hasFullAccess && !access.isPaid) return "MAX" as const;
+  if (isUnlimitedPlan(access.plan)) return "MAX" as const;
   return access.plan;
 }
 
@@ -65,7 +65,6 @@ async function fetchLimitedProperties(
 
   const baseWhere: Prisma.PropertyWhereInput = {
     status: "ACTIVE",
-    ...merchantListingPublicVisibilityWhere(),
     ...categoryTypeFilter,
     ...(filters.minRent && { monthlyRent: { gte: filters.minRent } }),
     ...(filters.maxRent && { monthlyRent: { lte: filters.maxRent } }),
@@ -261,15 +260,10 @@ export const POST = withAuth(
       `${landlordName} (${session.user.email}) submitted "${parsed.data.name}" for verification.`
     );
 
-    const access = await getSubscriptionAccess(session.user.id);
-    const submittedMessage = merchantHasMarketplaceListingVisibility(access)
-      ? `Your listing "${parsed.data.name}" has been submitted and is pending admin review. Once approved, it will appear on the marketplace.`
-      : `Your listing "${parsed.data.name}" has been submitted and is pending admin review. Once approved, subscribe to Pro or Max to make it visible on the public properties page.`;
-
     await notifyUserInAppAndEmail(
       session.user.id,
       "Listing submitted",
-      submittedMessage
+      `Your listing "${parsed.data.name}" has been submitted and is pending admin review.`
     );
 
     return apiResponse(property, 201);
