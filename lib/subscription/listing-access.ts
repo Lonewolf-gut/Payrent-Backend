@@ -1,4 +1,4 @@
-import type { PropertyType } from "@prisma/client";
+import type { Prisma, PropertyType } from "@prisma/client";
 import { prisma } from "@/lib/db/prisma";
 import { AppError } from "@/lib/errors";
 import { getBusinessRules } from "@/lib/services/business-rules.service";
@@ -9,8 +9,28 @@ import {
   getPropertyCategory,
   isUnlimitedPlan,
 } from "@/lib/subscription-limits";
-import { getSubscriptionAccess } from "@/lib/subscription/access";
+import { getSubscriptionAccess, type SubscriptionAccess } from "@/lib/subscription/access";
 import { isPaidPlan } from "@/lib/subscription/plans";
+
+/** Free merchants can list, but only paid plans appear on the public marketplace. */
+export function merchantHasMarketplaceListingVisibility(access: SubscriptionAccess) {
+  return access.isPaid;
+}
+
+export function merchantListingPublicVisibilityWhere(): Prisma.PropertyWhereInput {
+  return {
+    landlord: {
+      user: {
+        subscriptions: {
+          some: {
+            status: "ACTIVE",
+            plan: { in: ["PRO", "MAX", "PREMIUM"] },
+          },
+        },
+      },
+    },
+  };
+}
 
 export async function assertMerchantCanCreateListing(userId: string) {
   const [access, rules] = await Promise.all([
