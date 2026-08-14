@@ -1,7 +1,6 @@
 import { prisma } from "@/lib/db/prisma";
 import { loadSubscriptionAccess } from "@/lib/subscription/access";
 import { isUnlimitedPlan } from "@/lib/subscription-limits";
-import { isUnlimitedPlan } from "@/lib/subscription-limits";
 
 export async function suspendListingsAfterTrial(userId: string) {
   const access = await loadSubscriptionAccess(userId);
