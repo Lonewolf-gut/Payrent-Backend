@@ -21,7 +21,6 @@ import { getProfileDisplayName } from "@/lib/utils/display-name";
 import { SUPPORT_EMAIL, PLATFORM_NAME } from "@/constants/platform";
 import { sendEmail, buildEmailTemplate } from "@/lib/services/email.service";
 import { consentService } from "@/lib/services/consent.service";
-import { shouldExposeOtpCodes } from "@/lib/auth/expose-otp";
 import { normalizeGhanaPhoneNumber } from "@/lib/integrations/paystack/banks";
 
 export type RegisterContext = {
@@ -35,6 +34,22 @@ const SUBSCRIPTION_LIMITS = {
   MAX: { propertyViews: Infinity, financingRequests: Infinity },
   PREMIUM: { propertyViews: Infinity, financingRequests: Infinity },
 };
+
+async function runRegistrationSideEffect<T>(
+  step: string,
+  task: () => Promise<T>
+): Promise<T | null> {
+  try {
+    return await task();
+  } catch (error) {
+    const { logger } = await import("@/lib/logger");
+    logger.error("Registration side effect failed", {
+      step,
+      error: error instanceof Error ? error.message : String(error),
+    });
+    return null;
+  }
+}
 
 export class AuthService {
   async register(input: RegisterInput, context?: RegisterContext) {
@@ -121,33 +136,46 @@ export class AuthService {
             ? "MARKETER"
             : "LENDER";
 
-    await walletService.getOrCreateWallet(user.id, walletType);
-
-    await prisma.subscription.create({
-      data: { userId: user.id, plan: "FREE", status: "ACTIVE" },
-    });
-
-    const otp = await otpService.create(user.id, "EMAIL_VERIFY");
-    await notificationService.create({
-      userId: user.id,
-      title: "Verify your email",
-      body: `Your verification code is: ${otp}. It expires in 15 minutes.`,
-      channel: "IN_APP",
-      sendEmail: false,
-    });
-
-    const emailResult = await notificationService.deliverEmail(
-      user.id,
-      "Verify your email",
-      `Your verification code is: ${otp}\n\nIt expires in 15 minutes. Enter this code on the verify email page to unlock your dashboard.`
+    await runRegistrationSideEffect("wallet.create", () =>
+      walletService.getOrCreateWallet(user.id, walletType)
     );
 
-    if (emailResult?.previewUrl) {
-      const { logger } = await import("@/lib/logger");
-      logger.info("Open this link to view the verification email", {
-        previewUrl: emailResult.previewUrl,
-        email: user.email,
-      });
+    await runRegistrationSideEffect("subscription.create", () =>
+      prisma.subscription.create({
+        data: { userId: user.id, plan: "FREE", status: "ACTIVE" },
+      })
+    );
+
+    const otp = await runRegistrationSideEffect("otp.create", () =>
+      otpService.create(user.id, "EMAIL_VERIFY")
+    );
+
+    if (otp) {
+      await runRegistrationSideEffect("notification.verify-email", () =>
+        notificationService.create({
+          userId: user.id,
+          title: "Verify your email",
+          body: `Your verification code is: ${otp}. It expires in 15 minutes.`,
+          channel: "IN_APP",
+          sendEmail: false,
+        })
+      );
+
+      const emailResult = await runRegistrationSideEffect("email.verify", () =>
+        notificationService.deliverEmail(
+          user.id,
+          "Verify your email",
+          `Your verification code is: ${otp}\n\nIt expires in 15 minutes. Enter this code on the verify email page to unlock your dashboard.`
+        )
+      );
+
+      if (emailResult?.previewUrl) {
+        const { logger } = await import("@/lib/logger");
+        logger.info("Open this link to view the verification email", {
+          previewUrl: emailResult.previewUrl,
+          email: user.email,
+        });
+      }
     }
 
     const displayName =
@@ -171,60 +199,59 @@ export class AuthService {
       `If you did not create this account, please contact ${SUPPORT_EMAIL} immediately.`,
     ].join("\n");
 
-    await notificationService.create({
-      userId: user.id,
-      title: "Welcome to PayForMe",
-      body: welcomeBody,
-      channel: "IN_APP",
-      sendEmail: false,
-    });
-
-    const welcomeEmailResult = await sendEmail({
-      to: user.email,
-      subject: `[PayForMe] Welcome to PayForMe — your account is ready`,
-      html: buildEmailTemplate("Welcome to PayForMe", welcomeBody),
-      text: welcomeBody,
-    });
-
-    if (welcomeEmailResult?.previewUrl) {
-      const { logger } = await import("@/lib/logger");
-      logger.info("Open this link to view the welcome email", {
-        previewUrl: welcomeEmailResult.previewUrl,
-        email: user.email,
-      });
-    }
-
-    await notifyAllAdminsInAppAndEmail(
-      "New account registered",
-      `${displayName} (${formatRoleLabel(input.role)}) registered with ${user.email}. Account is pending email verification.`
+    await runRegistrationSideEffect("notification.welcome", () =>
+      notificationService.create({
+        userId: user.id,
+        title: "Welcome to PayForMe",
+        body: welcomeBody,
+        channel: "IN_APP",
+        sendEmail: false,
+      })
     );
 
-    await auditService.log({
-      userId: user.id,
-      action: "USER_REGISTERED",
-      entity: "User",
-      entityId: user.id,
-      ipAddress: context?.ipAddress,
-      userAgent: context?.userAgent,
-    });
-
-    await consentService.recordRegistrationConsents(user.id, {
-      ipAddress: context?.ipAddress,
-      userAgent: context?.userAgent,
-      metadata: { role: input.role },
-    });
-
-    const { verificationReminderService } = await import(
-      "@/lib/services/verification-reminder.service"
+    await runRegistrationSideEffect("email.welcome", () =>
+      sendEmail({
+        to: user.email,
+        subject: `[PayForMe] Welcome to PayForMe — your account is ready`,
+        html: buildEmailTemplate("Welcome to PayForMe", welcomeBody),
+        text: welcomeBody,
+      })
     );
-    await verificationReminderService.notifyIfUnverified(user.id, user.role);
 
-    return {
-      userId: user.id,
-      email: user.email,
-      role: user.role,
-      ...(shouldExposeOtpCodes() ? { devCode: otp } : {}),
-    };
+    await runRegistrationSideEffect("admin.notify-registration", () =>
+      notifyAllAdminsInAppAndEmail(
+        "New account registered",
+        `${displayName} (${formatRoleLabel(input.role)}) registered with ${user.email}. Account is pending email verification.`
+      )
+    );
+
+    await runRegistrationSideEffect("audit.user-registered", () =>
+      auditService.log({
+        userId: user.id,
+        action: "USER_REGISTERED",
+        entity: "User",
+        entityId: user.id,
+        ipAddress: context?.ipAddress,
+        userAgent: context?.userAgent,
+      })
+    );
+
+    await runRegistrationSideEffect("consent.registration", () =>
+      consentService.recordRegistrationConsents(user.id, {
+        ipAddress: context?.ipAddress,
+        userAgent: context?.userAgent,
+        metadata: { role: input.role },
+      })
+    );
+
+    await runRegistrationSideEffect("verification.reminder", async () => {
+      const { verificationReminderService } = await import(
+        "@/lib/services/verification-reminder.service"
+      );
+      await verificationReminderService.notifyIfUnverified(user.id, user.role);
+    });
+
+    return { userId: user.id, email: user.email, role: user.role };
   }
 
   async verifyEmail(userId: string, code: string) {
