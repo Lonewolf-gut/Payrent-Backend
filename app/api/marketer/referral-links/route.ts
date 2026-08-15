@@ -3,10 +3,10 @@ import { z } from "zod";
 import { apiResponse, withAuth } from "@/lib/api/handler";
 import { agentReferralService } from "@/lib/services/agent-referral.service";
 import { prisma } from "@/lib/db/prisma";
-import { getAppOrigin } from "@/lib/utils/app-origin";
+import { getCustomerAppOrigin } from "@/lib/utils/app-origin";
 
 const createLinkSchema = z.object({
-  propertyId: z.string().optional(),
+  propertyId: z.string().min(1, "Listing is required"),
   label: z.string().max(120).optional(),
 });
 
@@ -18,7 +18,7 @@ export const GET = withAuth(
     if (!agent) return apiResponse({ error: "Affiliate profile required" }, 403);
 
     const links = await agentReferralService.listLinks(agent.id);
-    const origin = getAppOrigin(_req);
+    const origin = getCustomerAppOrigin(_req);
     const enriched = links.map((link) => ({
       ...link,
       url: agentReferralService.formatLinkUrl(origin, link.code, link.propertyId),
@@ -42,7 +42,7 @@ export const POST = withAuth(
     }
 
     const link = await agentReferralService.createLink(agent.id, parsed.data);
-    const origin = getAppOrigin(req);
+    const origin = getCustomerAppOrigin(req);
     return apiResponse(
       {
         ...link,

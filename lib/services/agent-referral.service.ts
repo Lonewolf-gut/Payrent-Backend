@@ -15,20 +15,22 @@ export class AgentReferralService {
   ) {
     await assertEligibleAgent(agentProfileId);
 
-    if (options?.propertyId) {
-      const property = await prisma.property.findFirst({
-        where: {
-          id: options.propertyId,
-          status: "ACTIVE",
-          OR: [{ agentUserId: agentProfileId }, { agentUserId: null }],
-        },
-      });
-      if (!property) {
-        throw new AppError(
-          "You can only create promotion links for active listings you represent or can claim",
-          400
-        );
-      }
+    if (!options?.propertyId) {
+      throw new AppError("Select a listing before creating a promotion link.", 400);
+    }
+
+    const property = await prisma.property.findFirst({
+      where: {
+        id: options.propertyId,
+        status: "ACTIVE",
+        OR: [{ agentUserId: agentProfileId }, { agentUserId: null }],
+      },
+    });
+    if (!property) {
+      throw new AppError(
+        "You can only create promotion links for active listings you represent or can claim",
+        400
+      );
     }
 
     let code = generateReferralCode();
@@ -87,8 +89,8 @@ export class AgentReferralService {
     });
   }
 
-  formatLinkUrl(origin: string, code: string, _propertyId?: string | null) {
-    return buildReferralUrl(origin, code);
+  formatLinkUrl(origin: string, code: string, propertyId?: string | null) {
+    return buildReferralUrl(origin, code, propertyId);
   }
 }
 
