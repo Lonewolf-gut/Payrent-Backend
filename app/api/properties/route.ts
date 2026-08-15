@@ -9,7 +9,7 @@ import { parsePropertyFormData } from "@/lib/utils/property-form-payload";
 import { cleanAttributesForDb } from "@/lib/utils/property-form";
 import { propertyRepository } from "@/lib/repositories/property.repository";
 import { prisma } from "@/lib/db/prisma";
-import { auth } from "@/lib/auth";
+import { resolveAppSession } from "@/lib/auth/resolve-session";
 import { apiResponse, withAuth, withPublicHandler } from "@/lib/api/handler";
 import {
   getUserDisplayName,
@@ -132,7 +132,7 @@ export const GET = withPublicHandler(async (req: NextRequest) => {
   const parsed = propertyFilterSchema.safeParse(params);
   const filters = parsed.success ? parsed.data : propertyFilterSchema.parse({});
 
-  const session = await auth();
+  const session = await resolveAppSession(req);
   const plan = await getBrowsePlan(session?.user?.id, session?.user?.role);
 
   if (!isUnlimitedPlan(plan)) {
