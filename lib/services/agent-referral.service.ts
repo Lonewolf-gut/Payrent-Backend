@@ -23,12 +23,12 @@ export class AgentReferralService {
       where: {
         id: options.propertyId,
         status: "ACTIVE",
-        OR: [{ agentUserId: agentProfileId }, { agentUserId: null }],
+        agentUserId: agentProfileId,
       },
     });
     if (!property) {
       throw new AppError(
-        "You can only create promotion links for active listings you represent or can claim",
+        "Claim this listing before creating a promotion link. Free Affiliates can promote 1 listing at a time.",
         400
       );
     }

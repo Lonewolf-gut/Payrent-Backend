@@ -26,26 +26,31 @@ export class AgentPropertyService {
   }
 
   async browseAvailable(agentUserId: string) {
-    await assertEligibleAgent(
-      (
-        await prisma.agentProfile.findUniqueOrThrow({
-          where: { userId: agentUserId },
-        })
-      ).id
-    );
+    const agent = await prisma.agentProfile.findUniqueOrThrow({
+      where: { userId: agentUserId },
+    });
 
-    return prisma.property.findMany({
-      where: {
-        status: "ACTIVE",
-        agentUserId: null,
-      },
+    await assertEligibleAgent(agent.id);
+
+    const listings = await prisma.property.findMany({
+      where: { status: "ACTIVE" },
       include: {
         images: { take: 1, orderBy: { order: "asc" } },
         landlord: { select: { fullName: true } },
+        assignedAgent: { select: { id: true, fullName: true } },
       },
       orderBy: [{ isPremium: "desc" }, { createdAt: "desc" }],
-      take: 50,
     });
+
+    return listings.map((listing) => ({
+      ...listing,
+      promotionStatus:
+        listing.agentUserId === agent.id
+          ? ("yours" as const)
+          : listing.agentUserId
+            ? ("claimed_by_other" as const)
+            : ("available" as const),
+    }));
   }
 
   async claimListing(agentUserId: string, propertyId: string) {
