@@ -1,4 +1,5 @@
 import crypto from "crypto";
+import { AppError } from "@/lib/errors";
 
 const ALGORITHM = "aes-256-gcm";
 const IV_LENGTH = 16;
@@ -7,7 +8,11 @@ const AUTH_TAG_LENGTH = 16;
 function getKey(): Buffer {
   const key = process.env.ENCRYPTION_KEY;
   if (!key || key.length < 64) {
-    throw new Error("ENCRYPTION_KEY must be a 64-character hex string");
+    throw new AppError(
+      "Two-factor authentication is not configured on this server. Set ENCRYPTION_KEY in the backend environment (64-character hex string) and restart.",
+      503,
+      "ENCRYPTION_KEY_MISSING"
+    );
   }
   return Buffer.from(key.slice(0, 64), "hex");
 }

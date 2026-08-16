@@ -15,14 +15,18 @@ export const POST = withAuth(async (req: NextRequest, _ctx, session) => {
     token: z.string().optional(),
   });
   const parsed = schema.safeParse(body);
-  if (!parsed.success) return apiResponse({ error: "Invalid input" }, 400);
+  if (!parsed.success) {
+    return apiResponse({ error: "Invalid input. Choose enable, verify, or disable." }, 400, "Invalid input.");
+  }
 
   if (parsed.data.action === "enable") {
     const result = await twoFactorService.enable(session.user.id, session.user.email);
     return apiResponse(result);
   }
 
-  if (!parsed.data.token) return apiResponse({ error: "Token required" }, 400);
+  if (!parsed.data.token) {
+    return apiResponse({ error: "Enter the 6-digit code from your authenticator app." }, 400, "Token required.");
+  }
 
   if (parsed.data.action === "verify") {
     await twoFactorService.verify(session.user.id, parsed.data.token);

@@ -6,6 +6,7 @@ import {
   isUnlimitedPlan,
 } from "@/lib/subscription-limits";
 import { getSubscriptionAccess } from "@/lib/subscription/access";
+import { getBusinessRulesSync } from "@/lib/services/business-rules.service";
 import { apiResponse, withAuth } from "@/lib/api/handler";
 
 export const GET = withAuth(
@@ -61,6 +62,7 @@ export const GET = withAuth(
       trialActive: access.trialActive,
       trialEndsAt: access.trialEndsAt,
       hasFullAccess: access.hasFullAccess,
+      agentCommissionPercent: getBusinessRulesSync().agentCommissionPercent,
       usage,
       limits: unlimited
         ? {

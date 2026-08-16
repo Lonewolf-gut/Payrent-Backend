@@ -19,10 +19,18 @@ export const GET = withAuth(
 
     const links = await agentReferralService.listLinks(agent.id);
     const origin = getCustomerAppOrigin(_req);
-    const enriched = links.map((link) => ({
-      ...link,
-      url: agentReferralService.formatLinkUrl(origin, link.code, link.propertyId),
-    }));
+    const fallbackProperty = await prisma.property.findFirst({
+      where: { agentUserId: agent.id, status: "ACTIVE" },
+      orderBy: { updatedAt: "desc" },
+      select: { id: true },
+    });
+    const enriched = links.map((link) => {
+      const propertyId = link.propertyId ?? fallbackProperty?.id ?? null;
+      return {
+        ...link,
+        url: agentReferralService.formatLinkUrl(origin, link.code, propertyId),
+      };
+    });
     return apiResponse(enriched);
   },
   { roles: ["MARKETER"] }

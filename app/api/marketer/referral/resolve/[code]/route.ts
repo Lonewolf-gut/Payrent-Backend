@@ -1,22 +1,20 @@
 import { NextRequest } from "next/server";
 import { apiResponse, withPublicHandler } from "@/lib/api/handler";
 import { agentReferralService } from "@/lib/services/agent-referral.service";
-import { getReferralDestinationPath } from "@/lib/utils/agent-referral";
-
 export const GET = withPublicHandler(async (_req: NextRequest, context) => {
   const { code } = await context.params;
-  const link = await agentReferralService.resolveReferralCode(code);
+  const resolved = await agentReferralService.resolveReferralDestination(code);
 
-  if (!link) {
+  if (!resolved) {
     return apiResponse({ redirectPath: "/", tracked: false }, 404, "Referral link not found.");
   }
 
-  await agentReferralService.trackClick(link.code);
+  await agentReferralService.trackClick(resolved.code);
 
   return apiResponse({
-    redirectPath: getReferralDestinationPath(link.propertyId),
-    code: link.code,
-    propertyId: link.propertyId,
+    redirectPath: resolved.redirectPath,
+    code: resolved.code,
+    propertyId: resolved.propertyId,
     tracked: true,
   });
 });

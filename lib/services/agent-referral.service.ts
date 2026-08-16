@@ -2,7 +2,7 @@ import { randomBytes } from "crypto";
 import { prisma } from "@/lib/db/prisma";
 import { AppError } from "@/lib/errors";
 import { assertEligibleAgent } from "@/lib/services/agent-assignment.service";
-import { buildReferralUrl } from "@/lib/utils/agent-referral";
+import { buildReferralUrl, getReferralDestinationPath } from "@/lib/utils/agent-referral";
 
 function generateReferralCode() {
   return randomBytes(4).toString("hex").toUpperCase();
@@ -66,6 +66,7 @@ export class AgentReferralService {
     const link = await prisma.agentReferralLink.findUnique({
       where: { code: code.trim().toUpperCase() },
       include: {
+        property: { select: { id: true, status: true } },
         agent: { include: { user: { select: { id: true, isActive: true, role: true } } } },
       },
     });
@@ -73,6 +74,37 @@ export class AgentReferralService {
       return null;
     }
     return link;
+  }
+
+  async resolveReferralDestination(code?: string | null) {
+    const link = await this.resolveReferralCode(code);
+    if (!link) return null;
+
+    let propertyId = link.propertyId;
+
+    if (propertyId) {
+      const property =
+        link.property ??
+        (await prisma.property.findFirst({
+          where: { id: propertyId, status: "ACTIVE" },
+          select: { id: true, status: true },
+        }));
+      if (!property || property.status !== "ACTIVE") return null;
+    } else {
+      const promoted = await prisma.property.findFirst({
+        where: { agentUserId: link.agentProfileId, status: "ACTIVE" },
+        orderBy: { updatedAt: "desc" },
+        select: { id: true },
+      });
+      if (!promoted) return null;
+      propertyId = promoted.id;
+    }
+
+    return {
+      redirectPath: getReferralDestinationPath(propertyId),
+      code: link.code,
+      propertyId,
+    };
   }
 
   async resolveAgentProfileId(code?: string | null) {
