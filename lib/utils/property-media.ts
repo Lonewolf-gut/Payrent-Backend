@@ -11,7 +11,6 @@ import {
 
 type ImageRecord = { id?: string; url: string };
 
-/** Keep database url intact; add displayUrl for the browser. */
 export function withResolvedPropertyImages<
   T extends { images?: Array<ImageRecord & { alt?: string | null }> | null },
 >(property: T) {

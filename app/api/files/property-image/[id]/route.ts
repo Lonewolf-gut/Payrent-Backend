@@ -10,17 +10,12 @@ import {
   normalizeStoredFileReference,
 } from "@/lib/storage/keys";
 import { readLocalFile } from "@/lib/storage/local-storage";
+import {
+  bufferToDataUrl,
+  DATA_URL_MAX_BYTES,
+  mimeFromStorageKey,
+} from "@/lib/storage/property-image-url";
 import { getS3PublicUrl } from "@/lib/storage/s3-storage";
-
-function getBackendPublicOrigin() {
-  return (
-    process.env.API_URL ??
-    process.env.INTERNAL_API_URL ??
-    process.env.NEXT_PUBLIC_API_URL ??
-    process.env.NEXT_PUBLIC_APP_URL?.replace(":3000", ":3001") ??
-    "http://localhost:3001"
-  ).replace(/\/$/, "");
-}
 
 const MIME_BY_EXT: Record<string, string> = {
   ".jpg": "image/jpeg",
@@ -72,10 +67,14 @@ function storageKeyFromDbUrl(url: string): string | null {
   return normalized.startsWith("public/") ? normalized : null;
 }
 
-async function redirectToBackendUploadPath(uploadPath: string) {
-  const backend = getBackendApiBaseUrl() || "http://localhost:3001";
-  const normalized = uploadPath.startsWith("/") ? uploadPath : `/${uploadPath}`;
-  return NextResponse.redirect(`${backend.replace(/\/$/, "")}${normalized}`, 307);
+function imageResponse(buffer: Buffer, mime: string) {
+  return new NextResponse(buffer, {
+    status: 200,
+    headers: {
+      "Content-Type": mime,
+      "Cache-Control": "public, max-age=86400, immutable",
+    },
+  });
 }
 
 async function serveStorageKey(storageKey: string) {
@@ -85,15 +84,23 @@ async function serveStorageKey(storageKey: string) {
   }
 
   const body = await readLocalFile(storageKey);
-  const ext = path.extname(storageKey).toLowerCase();
+  const mime = mimeFromStorageKey(storageKey);
+  return imageResponse(body, MIME_BY_EXT[path.extname(storageKey).toLowerCase()] ?? mime);
+}
 
-  return new NextResponse(body, {
-    status: 200,
-    headers: {
-      "Content-Type": MIME_BY_EXT[ext] ?? "application/octet-stream",
-      "Cache-Control": "public, max-age=86400, immutable",
-    },
-  });
+async function materializeLegacyImage(id: string, storageKey: string) {
+  const body = await readLocalFile(storageKey);
+  const mime = MIME_BY_EXT[path.extname(storageKey).toLowerCase()] ?? mimeFromStorageKey(storageKey);
+
+  if (body.length <= DATA_URL_MAX_BYTES) {
+    const dataUrl = bufferToDataUrl(body, mime);
+    await prisma.propertyImage.update({
+      where: { id },
+      data: { url: dataUrl },
+    });
+  }
+
+  return imageResponse(body, mime);
 }
 
 /** Load a property image using the url stored on the PropertyImage database row. */
@@ -105,7 +112,7 @@ export async function GET(
 
   const image = await prisma.propertyImage.findUnique({
     where: { id },
-    select: { url: true, alt: true },
+    select: { url: true },
   });
 
   if (!image?.url?.trim()) {
@@ -120,32 +127,22 @@ export async function GET(
 
   const dataUrl = parseDataUrl(url);
   if (dataUrl) {
-    return new NextResponse(dataUrl.buffer, {
-      status: 200,
-      headers: {
-        "Content-Type": dataUrl.mime,
-        "Cache-Control": "public, max-age=86400, immutable",
-      },
-    });
+    return imageResponse(dataUrl.buffer, dataUrl.mime);
   }
 
   if (looksLikeBase64(url)) {
-    return new NextResponse(Buffer.from(url.replace(/\s/g, ""), "base64"), {
-      status: 200,
-      headers: {
-        "Content-Type": "image/jpeg",
-        "Cache-Control": "public, max-age=86400, immutable",
-      },
-    });
+    return imageResponse(Buffer.from(url.replace(/\s/g, ""), "base64"), "image/jpeg");
   }
 
   const storageKey = storageKeyFromDbUrl(url);
   if (storageKey) {
     try {
-      return await serveStorageKey(storageKey);
+      return await materializeLegacyImage(id, storageKey);
     } catch {
-      if (url.startsWith("/uploads/") || url.startsWith("uploads/")) {
-        return redirectToBackendUploadPath(url);
+      try {
+        return await serveStorageKey(storageKey);
+      } catch {
+        // continue to helpers below
       }
     }
   }
@@ -159,16 +156,22 @@ export async function GET(
     const key = legacyPathToStorageKey(publicPath);
     if (key.startsWith("public/")) {
       try {
-        return await serveStorageKey(key);
+        return await materializeLegacyImage(id, key);
       } catch {
-        return redirectToBackendUploadPath(publicPath);
+        try {
+          return await serveStorageKey(key);
+        } catch {
+          // fall through
+        }
       }
     }
   }
 
-  if (url.startsWith("/uploads/") || url.startsWith("uploads/")) {
-    return redirectToBackendUploadPath(url);
-  }
-
-  return NextResponse.json({ error: "Unsupported image reference." }, { status: 404 });
+  return NextResponse.json(
+    {
+      error:
+        "Image file missing on server. Edit the listing and re-upload the photos once.",
+    },
+    { status: 404 }
+  );
 }

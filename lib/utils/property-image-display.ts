@@ -5,51 +5,24 @@ export type PropertyImageRecord = {
   url: string;
 };
 
-function backendPublicOrigin() {
-  return (
-    process.env.NEXT_PUBLIC_API_URL ??
-    process.env.NEXT_PUBLIC_APP_URL?.replace(":3000", ":3001")
-  )?.replace(/\/$/, "");
-}
-
 /**
- * Build the URL the browser should load for a PropertyImage row.
- * Uses the database `url` column directly when it is already absolute or a data URL.
+ * Single rule for the browser:
+ * 1. data:/https: urls from the database are used directly
+ * 2. everything else goes through /api/files/property-image/:id (reads DB on backend)
  */
 export function resolvePropertyImageDisplayUrl(image: PropertyImageRecord): string {
   const raw = image.url?.trim() ?? "";
   if (!raw) return "";
 
-  if (/^(https?:|data:|blob:)/i.test(raw)) {
+  if (/^(https?:|data:)/i.test(raw)) {
     return raw;
   }
 
-  if (raw.startsWith("/api/files/")) {
-    return raw;
+  if (image.id) {
+    return `/api/files/property-image/${image.id}`;
   }
 
-  const backend = backendPublicOrigin();
-
-  if (raw.startsWith("/uploads/")) {
-    return backend ? `${backend}${raw}` : fallbackApiImageUrl(image);
-  }
-
-  if (raw.startsWith("uploads/")) {
-    const path = `/${raw}`;
-    return backend ? `${backend}${path}` : fallbackApiImageUrl(image);
-  }
-
-  if (raw.startsWith("public/")) {
-    const uploadPath = `/uploads/${raw.replace(/^public\//, "")}`;
-    return backend ? `${backend}${uploadPath}` : fallbackApiImageUrl(image);
-  }
-
-  return fallbackApiImageUrl(image) || raw;
-}
-
-function fallbackApiImageUrl(image: PropertyImageRecord) {
-  if (!image.id) return "";
-  return `/api/files/property-image/${image.id}`;
+  return raw;
 }
 
 export function withPropertyImageDisplayUrls<
