@@ -6,10 +6,23 @@ import {
 } from "@/lib/storage/keys";
 import { getPublicFileUrl } from "@/lib/storage/index";
 
+type ImageRecord = { id?: string; url: string };
+
 /**
- * Turn a stored file reference (storage key, /uploads path, or absolute URL)
- * into a browser-loadable URL. Uses /api/files/public so split-repo frontends
- * can proxy file reads to PayRent-Backend.
+ * Property images are stored in the PropertyImage table (url column).
+ * We expose them through /api/files/property-image/:id so the backend reads
+ * the database row on every request (works in split repos via API proxy).
+ */
+export function resolvePropertyImageUrl(image: ImageRecord): string {
+  if (image.id) {
+    return `/api/files/property-image/${image.id}`;
+  }
+
+  return resolvePublicMediaUrl(image.url) ?? image.url;
+}
+
+/**
+ * Turn a stored file reference into a browser-loadable URL when no image id exists.
  */
 export function resolvePublicMediaUrl(
   storedUrl: string | null | undefined
@@ -18,11 +31,12 @@ export function resolvePublicMediaUrl(
 
   const trimmed = storedUrl.trim();
 
-  if (trimmed.startsWith("http://") || trimmed.startsWith("https://")) {
-    return trimmed;
-  }
-
-  if (trimmed.startsWith("/api/files/public")) {
+  if (
+    trimmed.startsWith("http://") ||
+    trimmed.startsWith("https://") ||
+    trimmed.startsWith("data:") ||
+    trimmed.startsWith("/api/files/")
+  ) {
     return trimmed;
   }
 
@@ -44,7 +58,7 @@ export function resolvePublicMediaUrl(
 }
 
 export function withResolvedPropertyImages<
-  T extends { images?: Array<{ url: string }> | null },
+  T extends { images?: Array<{ id?: string; url: string }> | null },
 >(property: T): T {
   if (!property.images?.length) return property;
 
@@ -52,13 +66,13 @@ export function withResolvedPropertyImages<
     ...property,
     images: property.images.map((image) => ({
       ...image,
-      url: resolvePublicMediaUrl(image.url) ?? image.url,
+      url: resolvePropertyImageUrl(image),
     })),
   };
 }
 
 export function withResolvedPropertyListImages<
-  T extends { images?: Array<{ url: string }> | null },
+  T extends { images?: Array<{ id?: string; url: string }> | null },
 >(properties: T[]): T[] {
   return properties.map(withResolvedPropertyImages);
 }
