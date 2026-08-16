@@ -6,9 +6,8 @@ import {
   normalizeSupabasePublicUrl,
   propertyImageApiPath,
   resolvePropertyImageDisplayUrl,
-  withPropertyImageDisplayUrls,
-  withPropertyListImageDisplayUrls,
 } from "@/lib/utils/property-image-display";
+import { resolvePublicObjectUrl } from "@/lib/utils/public-storage-url";
 import {
   isLegacyPublicUploadPath,
   legacyPathToStorageKey,
@@ -30,6 +29,11 @@ export function resolvePropertyImageUrlForResponse(image: ImageRecord): string {
 
   if (/^https?:\/\//i.test(raw)) {
     return normalizeSupabasePublicUrl(raw);
+  }
+
+  const cdnUrl = resolvePublicObjectUrl(raw);
+  if (cdnUrl) {
+    return cdnUrl;
   }
 
   const supabaseUrl = expandSupabaseStorageUrl(raw);

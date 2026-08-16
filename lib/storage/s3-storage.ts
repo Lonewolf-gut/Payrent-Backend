@@ -73,5 +73,22 @@ export async function getS3SignedUrl(key: string) {
 export function getS3PublicUrl(key: string) {
   const base = getPublicAssetBaseUrl();
   if (!base) return null;
-  return `${base}/${key}`;
+  return `${base}/${key.replace(/^public\//, "")}`;
+}
+
+export async function readFromS3(key: string) {
+  const command = new GetObjectCommand({
+    Bucket: getBucket(),
+    Key: key,
+  });
+
+  const result = await getS3Client().send(command);
+  if (!result.Body) {
+    throw new Error("Empty object body.");
+  }
+
+  const buffer = Buffer.from(await result.Body.transformToByteArray());
+  const mime = result.ContentType?.split(";")[0]?.trim() ?? "application/octet-stream";
+
+  return { buffer, mime };
 }

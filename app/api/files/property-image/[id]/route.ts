@@ -15,12 +15,13 @@ import {
   DATA_URL_MAX_BYTES,
   mimeFromStorageKey,
 } from "@/lib/storage/property-image-url";
-import { getS3PublicUrl } from "@/lib/storage/s3-storage";
+import { getS3PublicUrl, readFromS3 } from "@/lib/storage/s3-storage";
 import {
   expandSupabaseStorageUrl,
   normalizeDbImageUrl,
   normalizeSupabasePublicUrl,
 } from "@/lib/utils/property-image-display";
+import { resolvePublicObjectUrl } from "@/lib/utils/public-storage-url";
 
 const MIME_BY_EXT: Record<string, string> = {
   ".jpg": "image/jpeg",
@@ -85,7 +86,31 @@ function imageResponse(buffer: Buffer, mime: string) {
 async function serveStorageKey(storageKey: string) {
   if (getStorageDriver() === "s3" && isS3StorageConfigured()) {
     const s3Url = getS3PublicUrl(storageKey);
-    if (s3Url) return NextResponse.redirect(s3Url, 307);
+    if (s3Url) {
+      try {
+        return await fetchRemoteImage(s3Url);
+      } catch {
+        try {
+          const { buffer, mime } = await readFromS3(storageKey);
+          return imageResponse(
+            buffer,
+            MIME_BY_EXT[path.extname(storageKey).toLowerCase()] ?? mime
+          );
+        } catch {
+          return NextResponse.redirect(s3Url, 307);
+        }
+      }
+    }
+
+    try {
+      const { buffer, mime } = await readFromS3(storageKey);
+      return imageResponse(
+        buffer,
+        MIME_BY_EXT[path.extname(storageKey).toLowerCase()] ?? mime
+      );
+    } catch {
+      // fall through to local read
+    }
   }
 
   const body = await readLocalFile(storageKey);
@@ -132,6 +157,11 @@ function resolveRemoteUrl(url: string): string | null {
     return normalizeSupabasePublicUrl(raw);
   }
 
+  const cdnUrl = resolvePublicObjectUrl(raw);
+  if (cdnUrl) {
+    return cdnUrl;
+  }
+
   const expanded = expandSupabaseStorageUrl(raw);
   if (/^https?:\/\//i.test(expanded)) {
     return expanded;
@@ -139,7 +169,7 @@ function resolveRemoteUrl(url: string): string | null {
 
   const publicUrl = getPublicFileUrl(normalizeStoredFileReference(raw));
   if (publicUrl?.startsWith("http")) {
-    return normalizeSupabasePublicUrl(publicUrl);
+    return publicUrl;
   }
 
   return null;

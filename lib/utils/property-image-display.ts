@@ -1,22 +1,17 @@
 /** Client-safe property image URL helper (no Node storage imports). */
 
+import {
+  expandStorageKeyToPublicUrl,
+  normalizeDbImageUrl,
+  resolvePublicObjectUrl,
+} from "@/lib/utils/public-storage-url";
+
 export type PropertyImageRecord = {
   id?: string;
   url: string;
 };
 
-/** Strip wrapping quotes sometimes stored in the database. */
-export function normalizeDbImageUrl(url: string | null | undefined): string {
-  if (!url) return "";
-  let value = url.trim();
-  if (
-    (value.startsWith('"') && value.endsWith('"')) ||
-    (value.startsWith("'") && value.endsWith("'"))
-  ) {
-    value = value.slice(1, -1).trim();
-  }
-  return value;
-}
+export { normalizeDbImageUrl };
 
 function supabaseProjectUrl() {
   return (
@@ -33,7 +28,6 @@ export function normalizeSupabasePublicUrl(url: string): string {
   let normalized = url.replace("/storage/v1/object/authenticated/", "/storage/v1/object/public/");
   normalized = normalized.replace("/storage/v1/object/sign/", "/storage/v1/object/public/");
 
-  // Drop query params from signed URLs so the public object path is used.
   const queryIndex = normalized.indexOf("?");
   if (queryIndex !== -1 && normalized.includes("/storage/v1/object/")) {
     normalized = normalized.slice(0, queryIndex);
@@ -42,7 +36,7 @@ export function normalizeSupabasePublicUrl(url: string): string {
   return normalized;
 }
 
-/** Expand partial Supabase Storage paths to a full public URL. */
+/** Expand partial Supabase Storage paths to a full public URL (optional — Postgres only). */
 export function expandSupabaseStorageUrl(url: string): string {
   if (!url) return url;
   if (/^https?:\/\//i.test(url)) return normalizeSupabasePublicUrl(url);
@@ -85,7 +79,7 @@ export function propertyImageApiPath(imageId: string) {
 
 /**
  * Final browser URL for a PropertyImage row.
- * Uses loadable URLs from the database when possible; otherwise the API route by id.
+ * Priority: full CDN URL → R2/S3 key expansion → API route by id.
  */
 export function resolvePropertyImageDisplayUrl(image: PropertyImageRecord): string {
   const raw = normalizeDbImageUrl(image.url);
@@ -101,24 +95,29 @@ export function resolvePropertyImageDisplayUrl(image: PropertyImageRecord): stri
     return normalizeSupabasePublicUrl(raw);
   }
 
+  const cdnUrl = resolvePublicObjectUrl(raw);
+  if (cdnUrl) {
+    return cdnUrl;
+  }
+
   const supabaseUrl = expandSupabaseStorageUrl(raw);
   if (/^https?:\/\//i.test(supabaseUrl) && supabaseUrl !== raw) {
     return supabaseUrl;
   }
-  if (/^https?:\/\//i.test(supabaseUrl)) {
-    return supabaseUrl;
-  }
 
   if (raw.startsWith("/uploads/") || raw.startsWith("uploads/")) {
+    const uploadsUrl = resolvePublicObjectUrl(raw);
+    if (uploadsUrl) return uploadsUrl;
     return raw.startsWith("/") ? raw : `/${raw}`;
+  }
+
+  if (raw.startsWith("public/")) {
+    const fromKey = expandStorageKeyToPublicUrl(raw);
+    if (fromKey) return fromKey;
   }
 
   if (image.id) {
     return propertyImageApiPath(image.id);
-  }
-
-  if (/^https?:\/\//i.test(supabaseUrl)) {
-    return supabaseUrl;
   }
 
   return raw;
@@ -147,3 +146,5 @@ export function withPropertyListImageDisplayUrls<
 >(properties: T[]) {
   return properties.map(withPropertyImageDisplayUrls);
 }
+
+export { expandStorageKeyToPublicUrl, resolvePublicObjectUrl };
