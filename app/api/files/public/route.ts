@@ -1,30 +1,49 @@
 import { NextRequest, NextResponse } from "next/server";
+import path from "path";
 import { getStorageDriver, isS3StorageConfigured } from "@/lib/storage/config";
-import { getLocalPublicUrl } from "@/lib/storage/local-storage";
-import { normalizePublicPropertyImageRef } from "@/lib/storage/public-assets";
-import { getS3SignedUrl } from "@/lib/storage/s3-storage";
+import { readLocalFile } from "@/lib/storage/local-storage";
+import { getS3PublicUrl } from "@/lib/storage/s3-storage";
+import { resolvePublicStorageKeyFromRequest } from "@/lib/utils/property-media";
 
+const MIME_BY_EXT: Record<string, string> = {
+  ".jpg": "image/jpeg",
+  ".jpeg": "image/jpeg",
+  ".png": "image/png",
+  ".webp": "image/webp",
+  ".gif": "image/gif",
+  ".svg": "image/svg+xml",
+  ".pdf": "application/pdf",
+};
+
+/** Serve public uploads (property images, profile photos) without auth. */
 export async function GET(req: NextRequest) {
-  const ref = req.nextUrl.searchParams.get("ref");
-  if (!ref?.trim()) {
-    return NextResponse.json({ success: false, message: "Missing ref." }, { status: 400 });
-  }
+  const pathParam = req.nextUrl.searchParams.get("path");
+  const keyParam = req.nextUrl.searchParams.get("key");
 
-  const storageKey = normalizePublicPropertyImageRef(ref);
+  const storageKey = resolvePublicStorageKeyFromRequest(pathParam, keyParam);
   if (!storageKey) {
-    return NextResponse.json({ success: false, message: "Invalid property image reference." }, { status: 400 });
+    return NextResponse.json({ error: "Invalid public file request." }, { status: 400 });
   }
 
-  const driver = getStorageDriver();
-  if (driver === "s3" && isS3StorageConfigured()) {
-    const signedUrl = await getS3SignedUrl(storageKey);
-    return NextResponse.redirect(signedUrl, 307);
+  if (getStorageDriver() === "s3" && isS3StorageConfigured()) {
+    const s3Url = getS3PublicUrl(storageKey);
+    if (s3Url) {
+      return NextResponse.redirect(s3Url, 307);
+    }
   }
 
-  const localPath = getLocalPublicUrl(storageKey);
-  if (!localPath) {
-    return NextResponse.json({ success: false, message: "File not found." }, { status: 404 });
-  }
+  try {
+    const body = await readLocalFile(storageKey);
+    const ext = path.extname(storageKey).toLowerCase();
 
-  return NextResponse.redirect(`${req.nextUrl.origin}${localPath}`, 307);
+    return new NextResponse(body, {
+      status: 200,
+      headers: {
+        "Content-Type": MIME_BY_EXT[ext] ?? "application/octet-stream",
+        "Cache-Control": "public, max-age=86400, immutable",
+      },
+    });
+  } catch {
+    return NextResponse.json({ error: "File not found." }, { status: 404 });
+  }
 }

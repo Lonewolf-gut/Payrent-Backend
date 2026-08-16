@@ -2,6 +2,7 @@ import { prisma } from "@/lib/db/prisma";
 import { propertyRepository } from "@/lib/repositories/property.repository";
 import type { PropertyType } from "@prisma/client";
 import { RESIDENTIAL_TYPES } from "@/lib/subscription-limits";
+import { withResolvedPropertyListImages } from "@/lib/utils/property-media";
 
 export class PropertyDetailService {
   async getDetail(propertyId: string, viewerUserId?: string | null) {
@@ -75,7 +76,8 @@ export class PropertyDetailService {
     const rentMax = rent * 1.25;
     const isResidential = RESIDENTIAL_TYPES.includes(property.propertyType);
 
-    return prisma.property.findMany({
+    return withResolvedPropertyListImages(
+      await prisma.property.findMany({
       where: {
         id: { not: property.id },
         status: "ACTIVE",
@@ -91,7 +93,8 @@ export class PropertyDetailService {
       },
       orderBy: [{ isPremium: "desc" }, { createdAt: "desc" }],
       take: 4,
-    });
+    })
+    );
   }
 }
 

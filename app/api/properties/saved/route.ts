@@ -1,6 +1,7 @@
 import { NextRequest } from "next/server";
 import { prisma } from "@/lib/db/prisma";
 import { apiResponse, withAuth } from "@/lib/api/handler";
+import { withResolvedPropertyImages } from "@/lib/utils/property-media";
 import { z } from "zod";
 
 export const GET = withAuth(async (_req, _ctx, session) => {
@@ -11,7 +12,12 @@ export const GET = withAuth(async (_req, _ctx, session) => {
     },
     orderBy: { createdAt: "desc" },
   });
-  return apiResponse(saved);
+  return apiResponse(
+    saved.map((entry) => ({
+      ...entry,
+      property: withResolvedPropertyImages(entry.property),
+    }))
+  );
 });
 
 export const POST = withAuth(async (req: NextRequest, _ctx, session) => {

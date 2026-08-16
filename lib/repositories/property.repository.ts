@@ -2,10 +2,14 @@ import { prisma } from "@/lib/db/prisma";
 import type { Prisma, PropertyStatus, PropertyType } from "@prisma/client";
 import type { PropertyFilterInput } from "@/lib/validations/property";
 import { RESIDENTIAL_TYPES } from "@/lib/subscription-limits";
+import {
+  withResolvedPropertyImages,
+  withResolvedPropertyListImages,
+} from "@/lib/utils/property-media";
 
 export class PropertyRepository {
   async findById(id: string) {
-    return prisma.property.findUnique({
+    const property = await prisma.property.findUnique({
       where: { id },
       include: {
         images: { orderBy: { order: "asc" } },
@@ -23,6 +27,8 @@ export class PropertyRepository {
         },
       },
     });
+
+    return property ? withResolvedPropertyImages(property) : null;
   }
 
   async findMany(filters: PropertyFilterInput) {
@@ -82,22 +88,29 @@ export class PropertyRepository {
       prisma.property.count({ where }),
     ]);
 
-    return { items, total, page, limit };
+    return {
+      items: withResolvedPropertyListImages(items),
+      total,
+      page,
+      limit,
+    };
   }
 
   async create(data: Prisma.PropertyCreateInput) {
-    return prisma.property.create({
+    const property = await prisma.property.create({
       data,
       include: { images: true, videos: true, agent: true },
     });
+    return withResolvedPropertyImages(property);
   }
 
   async update(id: string, data: Prisma.PropertyUpdateInput) {
-    return prisma.property.update({
+    const property = await prisma.property.update({
       where: { id },
       data,
       include: { images: true, videos: true, agent: true },
     });
+    return withResolvedPropertyImages(property);
   }
 
   async delete(id: string) {
@@ -105,11 +118,12 @@ export class PropertyRepository {
   }
 
   async findByLandlord(landlordId: string) {
-    return prisma.property.findMany({
+    const properties = await prisma.property.findMany({
       where: { landlordId },
       include: { images: { orderBy: { order: "asc" } }, videos: true, agent: true },
       orderBy: { createdAt: "desc" },
     });
+    return withResolvedPropertyListImages(properties);
   }
 
   async updateStatus(id: string, status: PropertyStatus) {

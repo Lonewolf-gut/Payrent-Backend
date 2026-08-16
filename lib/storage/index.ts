@@ -139,7 +139,8 @@ export async function saveMandateUpload(file: File, ownerId: string) {
 
 export async function savePropertyImageUpload(file: File, ownerId: string) {
   const stored = await storeUploadedFile({ file, category: "properties/images", ownerId, kind: "image" });
-  return getPublicFileUrl(stored.key) ?? stored.key;
+  // Store the storage key; API responses resolve this to /api/files/public?...
+  return stored.key;
 }
 
 export async function savePropertyDocumentUpload(file: File, ownerId: string) {
