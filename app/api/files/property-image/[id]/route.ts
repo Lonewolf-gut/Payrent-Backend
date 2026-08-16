@@ -11,6 +11,7 @@ import {
 } from "@/lib/storage/keys";
 import { readLocalFile } from "@/lib/storage/local-storage";
 import { getS3PublicUrl } from "@/lib/storage/s3-storage";
+import { getBackendApiBaseUrl } from "@/lib/utils/backend-api-url";
 
 const MIME_BY_EXT: Record<string, string> = {
   ".jpg": "image/jpeg",
@@ -60,6 +61,12 @@ function storageKeyFromDbUrl(url: string): string | null {
 
   const normalized = normalizeStoredFileReference(trimmed);
   return normalized.startsWith("public/") ? normalized : null;
+}
+
+async function redirectToBackendUploadPath(uploadPath: string) {
+  const backend = getBackendApiBaseUrl() || "http://localhost:3001";
+  const normalized = uploadPath.startsWith("/") ? uploadPath : `/${uploadPath}`;
+  return NextResponse.redirect(`${backend.replace(/\/$/, "")}${normalized}`, 307);
 }
 
 async function serveStorageKey(storageKey: string) {
@@ -128,7 +135,9 @@ export async function GET(
     try {
       return await serveStorageKey(storageKey);
     } catch {
-      // Fall through to public URL helper below.
+      if (url.startsWith("/uploads/") || url.startsWith("uploads/")) {
+        return redirectToBackendUploadPath(url);
+      }
     }
   }
 
@@ -143,9 +152,13 @@ export async function GET(
       try {
         return await serveStorageKey(key);
       } catch {
-        return NextResponse.json({ error: "Image file not found." }, { status: 404 });
+        return redirectToBackendUploadPath(publicPath);
       }
     }
+  }
+
+  if (url.startsWith("/uploads/") || url.startsWith("uploads/")) {
+    return redirectToBackendUploadPath(url);
   }
 
   return NextResponse.json({ error: "Unsupported image reference." }, { status: 404 });
