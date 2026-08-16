@@ -16,6 +16,11 @@ import {
   mimeFromStorageKey,
 } from "@/lib/storage/property-image-url";
 import { getS3PublicUrl } from "@/lib/storage/s3-storage";
+import {
+  expandSupabaseStorageUrl,
+  normalizeDbImageUrl,
+  normalizeSupabasePublicUrl,
+} from "@/lib/utils/property-image-display";
 
 const MIME_BY_EXT: Record<string, string> = {
   ".jpg": "image/jpeg",
@@ -103,6 +108,43 @@ async function materializeLegacyImage(id: string, storageKey: string) {
   return imageResponse(body, mime);
 }
 
+async function fetchRemoteImage(url: string) {
+  const normalized = normalizeSupabasePublicUrl(url);
+  const response = await fetch(normalized, { cache: "no-store" });
+  if (!response.ok) {
+    throw new Error(`Remote image fetch failed (${response.status})`);
+  }
+
+  const buffer = Buffer.from(await response.arrayBuffer());
+  const mime =
+    response.headers.get("content-type")?.split(";")[0]?.trim() ??
+    MIME_BY_EXT[path.extname(new URL(normalized).pathname).toLowerCase()] ??
+    "image/jpeg";
+
+  return imageResponse(buffer, mime);
+}
+
+function resolveRemoteUrl(url: string): string | null {
+  const raw = normalizeDbImageUrl(url);
+  if (!raw) return null;
+
+  if (/^https?:\/\//i.test(raw)) {
+    return normalizeSupabasePublicUrl(raw);
+  }
+
+  const expanded = expandSupabaseStorageUrl(raw);
+  if (/^https?:\/\//i.test(expanded)) {
+    return expanded;
+  }
+
+  const publicUrl = getPublicFileUrl(normalizeStoredFileReference(raw));
+  if (publicUrl?.startsWith("http")) {
+    return normalizeSupabasePublicUrl(publicUrl);
+  }
+
+  return null;
+}
+
 /** Load a property image using the url stored on the PropertyImage database row. */
 export async function GET(
   _req: NextRequest,
@@ -119,10 +161,15 @@ export async function GET(
     return NextResponse.json({ error: "Image not found." }, { status: 404 });
   }
 
-  const url = image.url.trim();
+  const url = normalizeDbImageUrl(image.url);
 
-  if (url.startsWith("http://") || url.startsWith("https://")) {
-    return NextResponse.redirect(url, 307);
+  const remoteUrl = resolveRemoteUrl(url);
+  if (remoteUrl) {
+    try {
+      return await fetchRemoteImage(remoteUrl);
+    } catch {
+      return NextResponse.redirect(remoteUrl, 307);
+    }
   }
 
   const dataUrl = parseDataUrl(url);
@@ -142,14 +189,25 @@ export async function GET(
       try {
         return await serveStorageKey(storageKey);
       } catch {
-        // continue to helpers below
+        const publicPath = getPublicFileUrl(storageKey);
+        if (publicPath?.startsWith("http")) {
+          try {
+            return await fetchRemoteImage(publicPath);
+          } catch {
+            return NextResponse.redirect(publicPath, 307);
+          }
+        }
       }
     }
   }
 
   const publicPath = getPublicFileUrl(normalizeStoredFileReference(url));
   if (publicPath?.startsWith("http")) {
-    return NextResponse.redirect(publicPath, 307);
+    try {
+      return await fetchRemoteImage(publicPath);
+    } catch {
+      return NextResponse.redirect(publicPath, 307);
+    }
   }
 
   if (publicPath?.startsWith("/uploads/")) {

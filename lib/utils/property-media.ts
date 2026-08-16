@@ -1,4 +1,10 @@
+import { getPublicFileUrl } from "@/lib/storage/index";
 import {
+  expandSupabaseStorageUrl,
+  isDirectlyLoadableImageUrl,
+  normalizeDbImageUrl,
+  normalizeSupabasePublicUrl,
+  propertyImageApiPath,
   resolvePropertyImageDisplayUrl,
   withPropertyImageDisplayUrls,
   withPropertyListImageDisplayUrls,
@@ -11,19 +17,69 @@ import {
 
 type ImageRecord = { id?: string; url: string };
 
+/** Server-side resolver: uses storage config (S3/Supabase/local) before API fallback. */
+export function resolvePropertyImageUrlForResponse(image: ImageRecord): string {
+  const raw = normalizeDbImageUrl(image.url);
+  if (!raw) {
+    return image.id ? propertyImageApiPath(image.id) : "";
+  }
+
+  if (/^data:/i.test(raw)) {
+    return raw;
+  }
+
+  if (/^https?:\/\//i.test(raw)) {
+    return normalizeSupabasePublicUrl(raw);
+  }
+
+  const supabaseUrl = expandSupabaseStorageUrl(raw);
+  if (/^https?:\/\//i.test(supabaseUrl)) {
+    return supabaseUrl;
+  }
+
+  const publicUrl = getPublicFileUrl(normalizeStoredFileReference(raw));
+  if (publicUrl && isDirectlyLoadableImageUrl(publicUrl)) {
+    return publicUrl.startsWith("http") ? normalizeSupabasePublicUrl(publicUrl) : publicUrl;
+  }
+
+  if (image.id) {
+    return propertyImageApiPath(image.id);
+  }
+
+  return resolvePropertyImageDisplayUrl(image);
+}
+
+function mapPropertyImages<
+  T extends { images?: Array<ImageRecord & { alt?: string | null }> | null },
+>(property: T): T {
+  if (!property.images?.length) return property;
+
+  return {
+    ...property,
+    images: property.images.map((image) => {
+      const src = resolvePropertyImageUrlForResponse(image);
+      return {
+        ...image,
+        src,
+        displayUrl: src,
+      };
+    }),
+  };
+}
+
 export function withResolvedPropertyImages<
   T extends { images?: Array<ImageRecord & { alt?: string | null }> | null },
 >(property: T) {
-  return withPropertyImageDisplayUrls(property);
+  return mapPropertyImages(property);
 }
 
 export function withResolvedPropertyListImages<
   T extends { images?: Array<ImageRecord> | null },
 >(properties: T[]) {
-  return withPropertyListImageDisplayUrls(properties);
+  return properties.map(mapPropertyImages);
 }
 
-export const resolvePropertyImageUrl = resolvePropertyImageDisplayUrl;
+export const resolvePropertyImageUrl = resolvePropertyImageUrlForResponse;
 
 export function resolvePublicStorageKeyFromRequest(
   pathParam: string | null,
