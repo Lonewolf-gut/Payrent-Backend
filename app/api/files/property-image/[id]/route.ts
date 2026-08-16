@@ -3,12 +3,7 @@ import path from "path";
 import { prisma } from "@/lib/db/prisma";
 import { getStorageDriver, isS3StorageConfigured } from "@/lib/storage/config";
 import { getPublicFileUrl } from "@/lib/storage/index";
-import {
-  isLegacyPublicUploadPath,
-  isStorageKey,
-  legacyPathToStorageKey,
-  normalizeStoredFileReference,
-} from "@/lib/storage/keys";
+import { legacyPathToStorageKey } from "@/lib/storage/keys";
 import { readLocalFile } from "@/lib/storage/local-storage";
 import {
   bufferToDataUrl,
@@ -16,12 +11,13 @@ import {
   mimeFromStorageKey,
 } from "@/lib/storage/property-image-url";
 import { getS3PublicUrl, readFromS3 } from "@/lib/storage/s3-storage";
+import { normalizeDbImageUrl } from "@/lib/utils/public-storage-url";
 import {
-  expandSupabaseStorageUrl,
-  normalizeDbImageUrl,
-  normalizeSupabasePublicUrl,
-} from "@/lib/utils/property-image-display";
-import { resolvePublicObjectUrl } from "@/lib/utils/public-storage-url";
+  getPropertyImageCdnBaseUrl,
+  normalizePropertyImageStorageKey,
+  storageKeyFromCdnBaseUrl,
+  storageKeyFromHttpsPath,
+} from "@/lib/utils/property-image-storage";
 
 const MIME_BY_EXT: Record<string, string> = {
   ".jpg": "image/jpeg",
@@ -52,27 +48,6 @@ function parseDataUrl(url: string) {
   return { buffer, mime };
 }
 
-function storageKeyFromDbUrl(url: string): string | null {
-  const trimmed = url.trim();
-
-  if (isLegacyPublicUploadPath(trimmed)) {
-    const key = legacyPathToStorageKey(trimmed);
-    return key.startsWith("public/") ? key : null;
-  }
-
-  if (trimmed.startsWith("uploads/")) {
-    const key = legacyPathToStorageKey(`/${trimmed}`);
-    return key.startsWith("public/") ? key : null;
-  }
-
-  if (isStorageKey(trimmed)) {
-    return trimmed.startsWith("public/") ? trimmed : null;
-  }
-
-  const normalized = normalizeStoredFileReference(trimmed);
-  return normalized.startsWith("public/") ? normalized : null;
-}
-
 function imageResponse(buffer: Buffer, mime: string) {
   return new NextResponse(buffer, {
     status: 200,
@@ -83,59 +58,55 @@ function imageResponse(buffer: Buffer, mime: string) {
   });
 }
 
-async function serveStorageKey(storageKey: string) {
-  if (getStorageDriver() === "s3" && isS3StorageConfigured()) {
-    const s3Url = getS3PublicUrl(storageKey);
-    if (s3Url) {
-      try {
-        return await fetchRemoteImage(s3Url);
-      } catch {
-        try {
-          const { buffer, mime } = await readFromS3(storageKey);
-          return imageResponse(
-            buffer,
-            MIME_BY_EXT[path.extname(storageKey).toLowerCase()] ?? mime
-          );
-        } catch {
-          return NextResponse.redirect(s3Url, 307);
-        }
-      }
-    }
-
-    try {
-      const { buffer, mime } = await readFromS3(storageKey);
-      return imageResponse(
-        buffer,
-        MIME_BY_EXT[path.extname(storageKey).toLowerCase()] ?? mime
-      );
-    } catch {
-      // fall through to local read
-    }
-  }
-
-  const body = await readLocalFile(storageKey);
-  const mime = mimeFromStorageKey(storageKey);
-  return imageResponse(body, MIME_BY_EXT[path.extname(storageKey).toLowerCase()] ?? mime);
+function mimeForKey(storageKey: string, fallback?: string) {
+  return (
+    MIME_BY_EXT[path.extname(storageKey).toLowerCase()] ??
+    fallback ??
+    mimeFromStorageKey(storageKey)
+  );
 }
 
-async function materializeLegacyImage(id: string, storageKey: string) {
-  const body = await readLocalFile(storageKey);
-  const mime = MIME_BY_EXT[path.extname(storageKey).toLowerCase()] ?? mimeFromStorageKey(storageKey);
+async function serveFromS3(storageKey: string) {
+  const { buffer, mime } = await readFromS3(storageKey);
+  return imageResponse(buffer, mimeForKey(storageKey, mime));
+}
 
-  if (body.length <= DATA_URL_MAX_BYTES) {
-    const dataUrl = bufferToDataUrl(body, mime);
-    await prisma.propertyImage.update({
-      where: { id },
-      data: { url: dataUrl },
-    });
+async function serveStorageKey(id: string, storageKey: string) {
+  const useS3 = getStorageDriver() === "s3" && isS3StorageConfigured();
+
+  if (useS3) {
+    try {
+      return await serveFromS3(storageKey);
+    } catch {
+      const cdnUrl = getS3PublicUrl(storageKey);
+      if (cdnUrl) {
+        try {
+          return await fetchRemoteImage(cdnUrl);
+        } catch {
+          return NextResponse.redirect(cdnUrl, 307);
+        }
+      }
+      throw new Error("Storage object not found.");
+    }
   }
 
-  return imageResponse(body, mime);
+  try {
+    const body = await readLocalFile(storageKey);
+    const mime = mimeForKey(storageKey);
+    if (body.length <= DATA_URL_MAX_BYTES) {
+      await prisma.propertyImage.update({
+        where: { id },
+        data: { url: bufferToDataUrl(body, mime) },
+      });
+    }
+    return imageResponse(body, mime);
+  } catch {
+    throw new Error("Storage object not found.");
+  }
 }
 
 async function fetchRemoteImage(url: string) {
-  const normalized = normalizeSupabasePublicUrl(url);
-  const response = await fetch(normalized, { cache: "no-store" });
+  const response = await fetch(url, { cache: "no-store" });
   if (!response.ok) {
     throw new Error(`Remote image fetch failed (${response.status})`);
   }
@@ -143,36 +114,30 @@ async function fetchRemoteImage(url: string) {
   const buffer = Buffer.from(await response.arrayBuffer());
   const mime =
     response.headers.get("content-type")?.split(";")[0]?.trim() ??
-    MIME_BY_EXT[path.extname(new URL(normalized).pathname).toLowerCase()] ??
+    MIME_BY_EXT[path.extname(new URL(url).pathname).toLowerCase()] ??
     "image/jpeg";
 
   return imageResponse(buffer, mime);
 }
 
-function resolveRemoteUrl(url: string): string | null {
-  const raw = normalizeDbImageUrl(url);
-  if (!raw) return null;
+async function serveHttpsUrl(_id: string, url: string) {
+  try {
+    return await fetchRemoteImage(url);
+  } catch {
+    const cdnBase = getPropertyImageCdnBaseUrl();
+    const storageKey =
+      (cdnBase ? storageKeyFromCdnBaseUrl(url, cdnBase) : null) ??
+      storageKeyFromHttpsPath(url);
 
-  if (/^https?:\/\//i.test(raw)) {
-    return normalizeSupabasePublicUrl(raw);
+    if (storageKey && getStorageDriver() === "s3" && isS3StorageConfigured()) {
+      try {
+        return await serveFromS3(storageKey);
+      } catch {
+        // fall through
+      }
+    }
+    return NextResponse.redirect(url, 307);
   }
-
-  const cdnUrl = resolvePublicObjectUrl(raw);
-  if (cdnUrl) {
-    return cdnUrl;
-  }
-
-  const expanded = expandSupabaseStorageUrl(raw);
-  if (/^https?:\/\//i.test(expanded)) {
-    return expanded;
-  }
-
-  const publicUrl = getPublicFileUrl(normalizeStoredFileReference(raw));
-  if (publicUrl?.startsWith("http")) {
-    return publicUrl;
-  }
-
-  return null;
 }
 
 /** Load a property image using the url stored on the PropertyImage database row. */
@@ -193,15 +158,6 @@ export async function GET(
 
   const url = normalizeDbImageUrl(image.url);
 
-  const remoteUrl = resolveRemoteUrl(url);
-  if (remoteUrl) {
-    try {
-      return await fetchRemoteImage(remoteUrl);
-    } catch {
-      return NextResponse.redirect(remoteUrl, 307);
-    }
-  }
-
   const dataUrl = parseDataUrl(url);
   if (dataUrl) {
     return imageResponse(dataUrl.buffer, dataUrl.mime);
@@ -211,45 +167,27 @@ export async function GET(
     return imageResponse(Buffer.from(url.replace(/\s/g, ""), "base64"), "image/jpeg");
   }
 
-  const storageKey = storageKeyFromDbUrl(url);
+  if (/^https?:\/\//i.test(url)) {
+    return serveHttpsUrl(id, url);
+  }
+
+  const storageKey = normalizePropertyImageStorageKey(url);
   if (storageKey) {
     try {
-      return await materializeLegacyImage(id, storageKey);
+      return await serveStorageKey(id, storageKey);
     } catch {
-      try {
-        return await serveStorageKey(storageKey);
-      } catch {
-        const publicPath = getPublicFileUrl(storageKey);
-        if (publicPath?.startsWith("http")) {
-          try {
-            return await fetchRemoteImage(publicPath);
-          } catch {
-            return NextResponse.redirect(publicPath, 307);
-          }
-        }
+      const publicPath = getPublicFileUrl(storageKey);
+      if (publicPath?.startsWith("http")) {
+        return serveHttpsUrl(id, publicPath);
       }
-    }
-  }
-
-  const publicPath = getPublicFileUrl(normalizeStoredFileReference(url));
-  if (publicPath?.startsWith("http")) {
-    try {
-      return await fetchRemoteImage(publicPath);
-    } catch {
-      return NextResponse.redirect(publicPath, 307);
-    }
-  }
-
-  if (publicPath?.startsWith("/uploads/")) {
-    const key = legacyPathToStorageKey(publicPath);
-    if (key.startsWith("public/")) {
-      try {
-        return await materializeLegacyImage(id, key);
-      } catch {
-        try {
-          return await serveStorageKey(key);
-        } catch {
-          // fall through
+      if (publicPath?.startsWith("/uploads/")) {
+        const key = legacyPathToStorageKey(publicPath);
+        if (key.startsWith("public/")) {
+          try {
+            return await serveStorageKey(id, key);
+          } catch {
+            // fall through
+          }
         }
       }
     }
@@ -258,7 +196,7 @@ export async function GET(
   return NextResponse.json(
     {
       error:
-        "Image file missing on server. Edit the listing and re-upload the photos once.",
+        "Image file missing on server. Check STORAGE_DRIVER and R2 credentials on PayRent-Backend, then re-upload if needed.",
     },
     { status: 404 }
   );

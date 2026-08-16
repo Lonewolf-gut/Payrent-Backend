@@ -1,6 +1,6 @@
 import { getMaxUploadBytes } from "@/lib/storage/config";
-import { storeUploadedFile } from "@/lib/storage/index";
-import { extensionForMime, validateUploadFile } from "@/lib/storage/validation";
+import { getPublicFileUrl, storeUploadedFile } from "@/lib/storage/index";
+import { validateUploadFile } from "@/lib/storage/validation";
 
 const DATA_URL_MAX_BYTES = 3 * 1024 * 1024;
 
@@ -17,7 +17,10 @@ export function mimeFromStorageKey(storageKey: string) {
   return MIME_BY_EXT[ext] ?? "image/jpeg";
 }
 
-/** Persist property photos in the database as data URLs when reasonably sized. */
+/**
+ * Persist property photos. Small files become data URLs; larger files go to public
+ * object storage (R2/S3/local) and we store a loadable public URL when available.
+ */
 export async function savePropertyImageUpload(file: File, ownerId: string) {
   const maxBytes = getMaxUploadBytes();
   const { mimeType } = validateUploadFile(file, { kind: "image", maxBytes });
@@ -33,7 +36,8 @@ export async function savePropertyImageUpload(file: File, ownerId: string) {
     ownerId,
     kind: "image",
   });
-  return stored.key;
+
+  return getPublicFileUrl(stored.key) ?? stored.key;
 }
 
 export function bufferToDataUrl(buffer: Buffer, mimeType: string) {

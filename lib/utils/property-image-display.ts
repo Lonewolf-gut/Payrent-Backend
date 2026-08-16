@@ -5,6 +5,7 @@ import {
   normalizeDbImageUrl,
   resolvePublicObjectUrl,
 } from "@/lib/utils/public-storage-url";
+import { isPropertyImageStorageReference } from "@/lib/utils/property-image-storage";
 
 export type PropertyImageRecord = {
   id?: string;
@@ -36,7 +37,7 @@ export function normalizeSupabasePublicUrl(url: string): string {
   return normalized;
 }
 
-/** Expand partial Supabase Storage paths to a full public URL (optional — Postgres only). */
+/** Expand partial Supabase Storage paths to a full public URL (optional). */
 export function expandSupabaseStorageUrl(url: string): string {
   if (!url) return url;
   if (/^https?:\/\//i.test(url)) return normalizeSupabasePublicUrl(url);
@@ -79,7 +80,7 @@ export function propertyImageApiPath(imageId: string) {
 
 /**
  * Final browser URL for a PropertyImage row.
- * Priority: full CDN URL → R2/S3 key expansion → API route by id.
+ * Storage keys always go through the API route so the backend can read R2/S3 with credentials.
  */
 export function resolvePropertyImageDisplayUrl(image: PropertyImageRecord): string {
   const raw = normalizeDbImageUrl(image.url);
@@ -95,6 +96,11 @@ export function resolvePropertyImageDisplayUrl(image: PropertyImageRecord): stri
     return normalizeSupabasePublicUrl(raw);
   }
 
+  // Storage key or legacy path — backend serves bytes (works with private R2 buckets).
+  if (isPropertyImageStorageReference(raw) && image.id) {
+    return propertyImageApiPath(image.id);
+  }
+
   const cdnUrl = resolvePublicObjectUrl(raw);
   if (cdnUrl) {
     return cdnUrl;
@@ -106,14 +112,14 @@ export function resolvePropertyImageDisplayUrl(image: PropertyImageRecord): stri
   }
 
   if (raw.startsWith("/uploads/") || raw.startsWith("uploads/")) {
-    const uploadsUrl = resolvePublicObjectUrl(raw);
-    if (uploadsUrl) return uploadsUrl;
+    if (image.id) return propertyImageApiPath(image.id);
     return raw.startsWith("/") ? raw : `/${raw}`;
   }
 
   if (raw.startsWith("public/")) {
     const fromKey = expandStorageKeyToPublicUrl(raw);
     if (fromKey) return fromKey;
+    if (image.id) return propertyImageApiPath(image.id);
   }
 
   if (image.id) {

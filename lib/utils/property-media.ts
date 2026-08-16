@@ -1,3 +1,4 @@
+import { getPublicAssetBaseUrl } from "@/lib/storage/config";
 import { getPublicFileUrl } from "@/lib/storage/index";
 import {
   expandSupabaseStorageUrl,
@@ -7,6 +8,7 @@ import {
   propertyImageApiPath,
   resolvePropertyImageDisplayUrl,
 } from "@/lib/utils/property-image-display";
+import { isPropertyImageStorageReference } from "@/lib/utils/property-image-storage";
 import { resolvePublicObjectUrl } from "@/lib/utils/public-storage-url";
 import {
   isLegacyPublicUploadPath,
@@ -16,7 +18,7 @@ import {
 
 type ImageRecord = { id?: string; url: string };
 
-/** Server-side resolver: uses storage config (S3/Supabase/local) before API fallback. */
+/** Server-side resolver: API route for storage keys; CDN/https for direct links. */
 export function resolvePropertyImageUrlForResponse(image: ImageRecord): string {
   const raw = normalizeDbImageUrl(image.url);
   if (!raw) {
@@ -29,6 +31,10 @@ export function resolvePropertyImageUrlForResponse(image: ImageRecord): string {
 
   if (/^https?:\/\//i.test(raw)) {
     return normalizeSupabasePublicUrl(raw);
+  }
+
+  if (isPropertyImageStorageReference(raw) && image.id) {
+    return propertyImageApiPath(image.id);
   }
 
   const cdnUrl = resolvePublicObjectUrl(raw);
@@ -108,3 +114,9 @@ export function resolvePublicStorageKeyFromRequest(
   const key = legacyPathToStorageKey(normalizedPath);
   return key.startsWith("public/") ? key : null;
 }
+
+export function getPropertyImageCdnBaseUrl() {
+  return getPublicAssetBaseUrl();
+}
+
+export { isPropertyImageStorageReference } from "@/lib/utils/property-image-storage";
