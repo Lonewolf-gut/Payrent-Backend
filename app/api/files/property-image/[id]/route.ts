@@ -11,7 +11,16 @@ import {
 } from "@/lib/storage/keys";
 import { readLocalFile } from "@/lib/storage/local-storage";
 import { getS3PublicUrl } from "@/lib/storage/s3-storage";
-import { getBackendApiBaseUrl } from "@/lib/utils/backend-api-url";
+
+function getBackendPublicOrigin() {
+  return (
+    process.env.API_URL ??
+    process.env.INTERNAL_API_URL ??
+    process.env.NEXT_PUBLIC_API_URL ??
+    process.env.NEXT_PUBLIC_APP_URL?.replace(":3000", ":3001") ??
+    "http://localhost:3001"
+  ).replace(/\/$/, "");
+}
 
 const MIME_BY_EXT: Record<string, string> = {
   ".jpg": "image/jpeg",
