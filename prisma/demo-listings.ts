@@ -1,5 +1,10 @@
 import type { PrismaClient, PropertyType } from "@prisma/client";
 
+/** Landscape crop for listing cards (avoids tall/portrait thumbnails). */
+function demoImage(photoId: string) {
+  return `https://images.unsplash.com/${photoId}?auto=format&fit=crop&w=800&h=533&q=80`;
+}
+
 type DemoListingSeed = {
   name: string;
   propertyType: PropertyType;
@@ -31,7 +36,7 @@ export const DEMO_CAR_LISTINGS: DemoListingSeed[] = [
     description:
       "Demo listing — well-maintained Toyota Camry 2020 with full service history. Ideal for hire-purchase or wallet purchase.",
     amenities: ["Automatic", "AC", "Bluetooth", "Reverse camera"],
-    imageUrl: "https://images.unsplash.com/photo-1621007947382-bef3e5a5bf6f?w=800",
+    imageUrl: demoImage("photo-1550355291-bbee04a92027"),
     stockQuantity: 1,
     deliveryTerms: "Pickup from Accra showroom within 3 business days.",
     warrantyDetails: "3-month engine and transmission warranty.",
@@ -49,7 +54,7 @@ export const DEMO_CAR_LISTINGS: DemoListingSeed[] = [
     description:
       "Demo listing — Honda CR-V 2021 SUV with leather interior and low mileage. Available for financing.",
     amenities: ["SUV", "4WD", "Sunroof", "Parking sensors"],
-    imageUrl: "https://images.unsplash.com/photo-1606664515524-ed2f786a0bd6?w=800",
+    imageUrl: demoImage("photo-1609521263047-f8f205293bb4"),
     stockQuantity: 1,
     deliveryTerms: "Delivery within Greater Kumasi available.",
     warrantyDetails: "6-month limited warranty.",
@@ -67,7 +72,7 @@ export const DEMO_CAR_LISTINGS: DemoListingSeed[] = [
     description:
       "Demo listing — fuel-efficient Hyundai Elantra 2019, perfect for daily commuting.",
     amenities: ["Automatic", "AC", "USB", "Keyless entry"],
-    imageUrl: "https://images.unsplash.com/photo-1552519507-da3b142c6e3d?w=800",
+    imageUrl: demoImage("photo-1552519507-da3b142c6e3d"),
     stockQuantity: 2,
     deliveryTerms: "Pickup in Tema or Accra.",
     attributes: { make: "Hyundai", model: "Elantra", year: 2019, mileageKm: 55000 },
@@ -84,7 +89,7 @@ export const DEMO_CAR_LISTINGS: DemoListingSeed[] = [
     description:
       "Demo listing — premium Mercedes-Benz C-Class 2018 with executive package.",
     amenities: ["Leather", "Navigation", "Premium sound", "Cruise control"],
-    imageUrl: "https://images.unsplash.com/photo-1618843479313-40f8afb4b4d8?w=800",
+    imageUrl: demoImage("photo-1618843479313-40f8afb4b4d8"),
     stockQuantity: 1,
     deliveryTerms: "Viewing by appointment in East Legon.",
     warrantyDetails: "90-day dealer warranty.",
@@ -102,7 +107,7 @@ export const DEMO_CAR_LISTINGS: DemoListingSeed[] = [
     description:
       "Demo listing — nearly new Nissan Sentra 2022 with manufacturer service records.",
     amenities: ["Automatic", "AC", "Apple CarPlay", "Lane assist"],
-    imageUrl: "https://images.unsplash.com/photo-1494976388531-d1058494bdd8?w=800",
+    imageUrl: demoImage("photo-1492144534655-ae79ce96cda9"),
     stockQuantity: 1,
     deliveryTerms: "Ships from Takoradi within 5 days.",
     attributes: { make: "Nissan", model: "Sentra", year: 2022, mileageKm: 15000 },
@@ -122,7 +127,7 @@ export const DEMO_APPLIANCE_LISTINGS: DemoListingSeed[] = [
     description:
       "Demo listing — Samsung double-door refrigerator with inverter technology and water dispenser.",
     amenities: ["Inverter", "Water dispenser", "Frost free"],
-    imageUrl: "https://images.unsplash.com/photo-1571175443880-49aa6102701a?w=800",
+    imageUrl: demoImage("photo-1635755076115-73c36a93563e"),
     stockQuantity: 3,
     deliveryTerms: "Free delivery within Accra for orders confirmed before Friday.",
     warrantyDetails: "1-year manufacturer warranty.",
@@ -140,7 +145,7 @@ export const DEMO_APPLIANCE_LISTINGS: DemoListingSeed[] = [
     description:
       "Demo listing — LG 55-inch 4K smart TV with webOS and wall-mount kit included.",
     amenities: ["4K UHD", "Smart TV", "Wall mount"],
-    imageUrl: "https://images.unsplash.com/photo-1593359677168-2a672944f167?w=800",
+    imageUrl: demoImage("photo-1593784991095-a205069470b6"),
     stockQuantity: 5,
     deliveryTerms: "Same-week delivery in Greater Accra.",
     warrantyDetails: "2-year panel warranty.",
@@ -158,7 +163,7 @@ export const DEMO_APPLIANCE_LISTINGS: DemoListingSeed[] = [
     description:
       "Demo listing — Hisense front-load 8kg washing machine, energy efficient and quiet.",
     amenities: ["Front load", "8kg", "Energy efficient"],
-    imageUrl: "https://images.unsplash.com/photo-1626806787461-102c1bfaaea1?w=800",
+    imageUrl: demoImage("photo-1626806787461-102c1bfaaea1"),
     stockQuantity: 4,
     deliveryTerms: "Pickup or delivery in Kumasi metro.",
     attributes: { brand: "Hisense", capacityKg: 8 },
@@ -175,7 +180,7 @@ export const DEMO_APPLIANCE_LISTINGS: DemoListingSeed[] = [
     description:
       "Demo listing — Midea split AC 1.5HP with installation kit. Ideal for bedroom or office.",
     amenities: ["Split unit", "1.5HP", "Remote control"],
-    imageUrl: "https://images.unsplash.com/photo-1631545806606-38fb96873178?w=800",
+    imageUrl: demoImage("photo-1585771725724-a2757cf49553"),
     stockQuantity: 6,
     deliveryTerms: "Installation available in Tema and Accra.",
     warrantyDetails: "12-month compressor warranty.",
@@ -193,7 +198,7 @@ export const DEMO_APPLIANCE_LISTINGS: DemoListingSeed[] = [
     description:
       "Demo listing — Philips rice cooker and multi-cooker bundle for home kitchens.",
     amenities: ["Multi-cook", "Non-stick", "Keep warm"],
-    imageUrl: "https://images.unsplash.com/photo-1585515320310-259814833e62?w=800",
+    imageUrl: demoImage("photo-1556909215-d1b3f9d1b3bf"),
     stockQuantity: 10,
     deliveryTerms: "Courier delivery nationwide within 7 days.",
     attributes: { brand: "Philips", capacityLitres: 5 },
@@ -233,6 +238,27 @@ async function upsertDemoListing(
       where: { id: existing.id },
       data,
     });
+
+    const coverImage = await prisma.propertyImage.findFirst({
+      where: { propertyId: existing.id },
+      orderBy: { order: "asc" },
+    });
+
+    if (coverImage) {
+      await prisma.propertyImage.update({
+        where: { id: coverImage.id },
+        data: { url: listing.imageUrl },
+      });
+    } else {
+      await prisma.propertyImage.create({
+        data: {
+          propertyId: existing.id,
+          url: listing.imageUrl,
+          order: 0,
+        },
+      });
+    }
+
     return { id: existing.id, created: false, name: listing.name };
   }
 
