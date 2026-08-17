@@ -20,6 +20,7 @@ import {
   type RepaymentPreference,
 } from "@/lib/services/eligibility.service";
 import { repaymentService } from "@/lib/services/repayment.service";
+import { isDemoMode } from "@/lib/config/demo";
 
 export class FinancingService {
   private async assertEligibility(tenantId: string) {
@@ -31,11 +32,349 @@ export class FinancingService {
     const verifiedBank = await prisma.bankAccount.findFirst({
       where: { userId: tenant.userId, isVerified: true },
     });
-    if (!verifiedBank) {
+    if (!verifiedBank && !isDemoMode()) {
       throw new AppError("Add and validate a bank account before requesting financing", 400);
     }
 
     return tenant;
+  }
+
+  private async resolveApplicationId(
+    tenantId: string,
+    propertyId: string,
+    applicationId?: string
+  ) {
+    if (applicationId) {
+      const application = await prisma.propertyApplication.findFirst({
+        where: {
+          id: applicationId,
+          tenantId,
+          propertyId,
+          status: { notIn: ["REJECTED", "WITHDRAWN"] },
+        },
+      });
+      if (!application) {
+        throw new AppError("Property application not found for this listing", 400);
+      }
+      return application;
+    }
+
+    const application = await prisma.propertyApplication.findFirst({
+      where: {
+        tenantId,
+        propertyId,
+        status: { in: ["SUBMITTED", "UNDER_REVIEW", "CLARIFICATION_REQUIRED", "APPROVED"] },
+      },
+      orderBy: { createdAt: "desc" },
+    });
+
+    if (!application) {
+      throw new AppError("Submit a property application before requesting financing", 400);
+    }
+
+    return application;
+  }
+
+  private async prerequisitesMet(tenantId: string, applicationId: string) {
+    const [application, docsApproved] = await Promise.all([
+      prisma.propertyApplication.findFirst({
+        where: { id: applicationId, tenantId, status: "APPROVED" },
+      }),
+      tenantFinancingDocService.areFinancingDocsApproved(tenantId),
+    ]);
+
+    return Boolean(application && docsApproved);
+  }
+
+  async submitRequest(
+    tenantId: string,
+    userId: string,
+    input: {
+      propertyId: string;
+      applicationId?: string;
+      requestedAmount: number;
+      durationMonths: number;
+      notes?: string;
+      referredAgentProfileId?: string | null;
+      repaymentPreference?: RepaymentPreference;
+      monthlyIncome?: number;
+    }
+  ) {
+    await this.assertEligibility(tenantId);
+
+    const application = await this.resolveApplicationId(
+      tenantId,
+      input.propertyId,
+      input.applicationId
+    );
+
+    const existing = await prisma.financingRequest.findFirst({
+      where: {
+        tenantId,
+        propertyId: input.propertyId,
+        status: { notIn: ["REJECTED", "WITHDRAWN", "CLOSED", "COMPLETED"] },
+      },
+    });
+
+    if (existing && existing.status !== "CREATED") {
+      throw new AppError("You already have an active Pay-for-Me request for this listing", 409);
+    }
+
+    const ready = await this.prerequisitesMet(tenantId, application.id);
+
+    if (ready) {
+      if (existing?.status === "CREATED") {
+        const request = await this.activateQueuedRequest(existing.id);
+        return { request, queued: false as const };
+      }
+
+      const request = await this.createRequest(
+        tenantId,
+        input.propertyId,
+        input.requestedAmount,
+        input.durationMonths,
+        input.notes,
+        application.id,
+        input.referredAgentProfileId,
+        input.repaymentPreference,
+        input.monthlyIncome
+      );
+
+      return { request, queued: false as const };
+    }
+
+    const request = await this.createOrUpdateIntent(
+      tenantId,
+      userId,
+      application.id,
+      input.propertyId,
+      input.requestedAmount,
+      input.durationMonths,
+      input.notes,
+      input.referredAgentProfileId,
+      input.repaymentPreference,
+      input.monthlyIncome,
+      existing?.id
+    );
+
+    return { request, queued: true as const };
+  }
+
+  async createOrUpdateIntent(
+    tenantId: string,
+    userId: string,
+    applicationId: string,
+    propertyId: string,
+    requestedAmount: number,
+    durationMonths: number,
+    notes?: string,
+    referredAgentProfileId?: string | null,
+    repaymentPreference?: RepaymentPreference,
+    monthlyIncome?: number,
+    existingId?: string
+  ) {
+    const property = await prisma.property.findUnique({
+      where: { id: propertyId },
+      include: { landlord: { include: { user: true } } },
+    });
+    if (!property || property.status !== "ACTIVE") {
+      throw new AppError("Property not available", 400);
+    }
+
+    const request = existingId
+      ? await prisma.financingRequest.update({
+          where: { id: existingId },
+          data: {
+            applicationId,
+            requestedAmount: new Prisma.Decimal(requestedAmount),
+            durationMonths,
+            notes,
+            referredAgentProfileId: referredAgentProfileId ?? undefined,
+            repaymentPreference: repaymentPreference as object,
+            affordabilitySnapshot: monthlyIncome
+              ? ({ monthlyIncomeOverride: monthlyIncome } as object)
+              : undefined,
+          },
+          include: {
+            property: true,
+            tenant: { include: { user: true } },
+            application: true,
+          },
+        })
+      : await prisma.financingRequest.create({
+          data: {
+            tenantId,
+            propertyId,
+            applicationId,
+            referredAgentProfileId: referredAgentProfileId ?? undefined,
+            requestedAmount: new Prisma.Decimal(requestedAmount),
+            durationMonths,
+            notes,
+            repaymentPreference: repaymentPreference as object,
+            affordabilitySnapshot: monthlyIncome
+              ? ({ monthlyIncomeOverride: monthlyIncome } as object)
+              : undefined,
+            status: "CREATED",
+          },
+          include: {
+            property: true,
+            tenant: { include: { user: true } },
+            application: true,
+          },
+        });
+
+    await notificationService.create({
+      userId: request.tenant.userId,
+      title: "Pay-for-Me request received",
+      body: `Your request for ${property.name} is queued. The merchant and admin will review your application and documents next.`,
+    });
+
+    await auditService.log({
+      userId,
+      action: "FINANCING_REQUEST_QUEUED",
+      entity: "FinancingRequest",
+      entityId: request.id,
+    });
+
+    return request;
+  }
+
+  async tryActivatePendingRequests(tenantId: string, propertyId?: string) {
+    const pending = await prisma.financingRequest.findMany({
+      where: {
+        tenantId,
+        status: "CREATED",
+        ...(propertyId ? { propertyId } : {}),
+      },
+      include: {
+        tenant: { include: { user: true } },
+        application: true,
+      },
+    });
+
+    for (const request of pending) {
+      if (!request.applicationId) continue;
+
+      const ready = await this.prerequisitesMet(tenantId, request.applicationId);
+      if (!ready) continue;
+
+      await this.activateQueuedRequest(request.id);
+    }
+  }
+
+  private async activateQueuedRequest(financingRequestId: string) {
+    const request = await prisma.financingRequest.findUnique({
+      where: { id: financingRequestId },
+      include: {
+        property: {
+          include: {
+            assignedAgent: { include: { user: { select: { id: true } } } },
+          },
+        },
+        tenant: { include: { user: true } },
+        application: true,
+      },
+    });
+
+    if (!request || request.status !== "CREATED" || !request.applicationId) {
+      throw new AppError("Queued financing request not found", 404);
+    }
+
+    const ready = await this.prerequisitesMet(request.tenantId, request.applicationId);
+    if (!ready) {
+      throw new AppError("Application and financing documents must be approved first", 400);
+    }
+
+    const snapshot = request.affordabilitySnapshot as { monthlyIncomeOverride?: number } | null;
+    const repaymentPreference = request.repaymentPreference as RepaymentPreference | null;
+
+    const assessment = await eligibilityService.assess({
+      tenantId: request.tenantId,
+      requestedAmount: Number(request.requestedAmount),
+      durationMonths: request.durationMonths,
+      monthlyIncomeOverride: snapshot?.monthlyIncomeOverride,
+      repaymentPreference: repaymentPreference ?? undefined,
+    });
+
+    if (assessment.riskCategory === "INELIGIBLE") {
+      throw new AppError(
+        "You do not meet the initial affordability requirements for this financing amount. Try a lower amount or longer repayment period.",
+        400
+      );
+    }
+
+    const initialStatus = assessment.autoApproved ? "MANDATE_PENDING" : "ELIGIBILITY_PENDING";
+
+    const updated = await prisma.financingRequest.update({
+      where: { id: request.id },
+      data: {
+        status: initialStatus,
+        riskCategory: assessment.riskCategory,
+        eligibilityScore: assessment.score,
+        affordabilitySnapshot: assessment.affordability as object,
+      },
+      include: {
+        property: {
+          include: {
+            assignedAgent: { include: { user: { select: { id: true } } } },
+          },
+        },
+        tenant: { include: { user: true } },
+        application: true,
+      },
+    });
+
+    if (!assessment.autoApproved) {
+      await prisma.adminReviewRecord.create({
+        data: {
+          reviewType: "FINANCING_REQUEST",
+          relatedEntityType: "FinancingRequest",
+          relatedEntityId: updated.id,
+          status: "PENDING",
+        },
+      });
+
+      await notifyAllAdminsInAppAndEmail(
+        "Financing request pending eligibility review",
+        `Customer ${updated.tenant.user.email} requested GHS ${Number(updated.requestedAmount).toLocaleString()} financing for "${updated.property.name}" (${assessment.riskCategory} risk).`
+      );
+    }
+
+    const notifyAgentId =
+      updated.referredAgentProfileId &&
+      (await prisma.agentProfile.findUnique({
+        where: { id: updated.referredAgentProfileId },
+        select: { userId: true },
+      }));
+
+    if (notifyAgentId) {
+      await notificationService.create({
+        userId: notifyAgentId.userId,
+        title: "Financing request from your promotion",
+        body: `A Customer requested financing for ${updated.property.name} through your referral.`,
+        metadata: { propertyId: updated.propertyId, financingRequestId: updated.id },
+      });
+    }
+
+    await notificationService.create({
+      userId: updated.tenant.userId,
+      title: "Pay-for-Me request activated",
+      body: `Your request for ${updated.property.name} is now with the admin for eligibility review.`,
+    });
+
+    await auditService.log({
+      userId: updated.tenant.userId,
+      action: "FINANCING_REQUEST_ACTIVATED",
+      entity: "FinancingRequest",
+      entityId: updated.id,
+      metadata: {
+        riskCategory: assessment.riskCategory,
+        eligibilityScore: assessment.score,
+        autoApproved: assessment.autoApproved,
+      },
+    });
+
+    return updated;
   }
 
   async createRequest(
@@ -787,13 +1126,6 @@ export class FinancingService {
   }
 
   async getPendingForLender(lenderUserId?: string) {
-    const lender = lenderUserId
-      ? await prisma.lender.findUnique({
-          where: { userId: lenderUserId },
-          select: { id: true },
-        })
-      : null;
-
     const requests = await prisma.financingRequest.findMany({
       where: { status: { in: ["PENDING", "UNDER_REVIEW", "READY_FOR_LENDER_REVIEW"] } },
       include: {
@@ -805,47 +1137,19 @@ export class FinancingService {
         property: { include: { images: { take: 1 } } },
         mandate: true,
         application: true,
-        ...(lender
-          ? {
-              lenderTags: {
-                where: { lenderId: lender.id },
-                select: { id: true, reason: true, createdAt: true },
-              },
-            }
-          : {}),
       },
       orderBy: { createdAt: "desc" },
     });
 
-    const enriched = requests.map((request) => {
-      const tags =
-        "lenderTags" in request && Array.isArray(request.lenderTags)
-          ? request.lenderTags
-          : [];
-      return {
-        ...request,
-        isTaggedForYou: tags.length > 0,
-        tagReason: tags[0]?.reason ?? null,
-        lenderTags: undefined,
-      };
-    });
-
-    const sorted = enriched.sort((a, b) => {
-      if (a.isTaggedForYou === b.isTaggedForYou) {
-        return new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime();
-      }
-      return a.isTaggedForYou ? -1 : 1;
-    });
-
-    if (!lenderUserId) return sorted;
+    if (!lenderUserId) return requests;
 
     const { getLenderFinancingAccess } = await import(
       "@/lib/subscription/lender-access"
     );
     const access = await getLenderFinancingAccess(lenderUserId);
-    if (access.limit == null) return sorted;
+    if (access.limit == null) return requests;
 
-    return sorted.slice(0, access.limit);
+    return requests.slice(0, access.limit);
   }
 
   async getPendingAdminReview() {

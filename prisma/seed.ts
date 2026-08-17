@@ -125,6 +125,28 @@ async function main() {
     },
   });
 
+  await prisma.bankAccount.upsert({
+    where: { id: "demo-tenant-bank" },
+    update: {
+      userId: tenantUser.id,
+      isVerified: true,
+      validationStatus: "VERIFIED",
+      isDefault: true,
+    },
+    create: {
+      id: "demo-tenant-bank",
+      userId: tenantUser.id,
+      bankName: "Demo Bank Ghana",
+      bankCode: "DEMO",
+      accountNumber: "0123456789",
+      accountNumberMasked: "****6789",
+      accountName: "Demo Buyer",
+      isVerified: true,
+      validationStatus: "VERIFIED",
+      isDefault: true,
+    },
+  });
+
   const landlordUser = await upsertDemoUser({
     email: "landlord@payforme.com",
     role: "MERCHANT",

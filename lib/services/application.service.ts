@@ -2,7 +2,7 @@ import { prisma } from "@/lib/db/prisma";
 import { notificationService } from "@/lib/services/notification.service";
 import { auditService } from "@/lib/services/audit.service";
 import { AppError } from "@/lib/errors";
-import type { CreateApplicationInput, ReviewApplicationInput, RespondToClarificationInput } from "@/lib/validations/application";
+import type { CreateApplicationInput, ReviewApplicationInput } from "@/lib/validations/application";
 
 export class ApplicationService {
   async create(
@@ -77,51 +77,13 @@ export class ApplicationService {
   }
 
   async listForTenant(tenantId: string) {
-    const tenant = await prisma.tenant.findUnique({
-      where: { id: tenantId },
-      select: { userId: true },
-    });
-
-    const apps = await prisma.propertyApplication.findMany({
+    return prisma.propertyApplication.findMany({
       where: { tenantId },
       include: {
         property: { include: { images: { take: 1 }, landlord: true } },
         documents: true,
-        financingRequests: { select: { id: true, status: true } },
       },
       orderBy: { createdAt: "desc" },
-    });
-
-    if (!tenant) return apps;
-
-    const payments = await prisma.walletTransaction.findMany({
-      where: {
-        wallet: { userId: tenant.userId, type: "BUYER" },
-        type: "PAYMENT",
-        status: "COMPLETED",
-      },
-      select: { metadata: true },
-    });
-
-    const paidApplicationIds = new Set(
-      payments
-        .map((payment) => (payment.metadata as { applicationId?: string } | null)?.applicationId)
-        .filter((id): id is string => Boolean(id))
-    );
-
-    return apps.map((app) => {
-      const paidWithCash = paidApplicationIds.has(app.id);
-      const hasFinancing = app.financingRequests.length > 0;
-
-      return {
-        ...app,
-        paymentMethod: paidWithCash ? "CASH" : hasFinancing ? "FINANCING" : null,
-        paymentLabel: paidWithCash
-          ? "Paid with wallet (cash)"
-          : hasFinancing
-            ? "Financing requested"
-            : null,
-      };
     });
   }
 
@@ -213,29 +175,10 @@ export class ApplicationService {
       include: { property: true },
     });
 
-    const notificationCopy = {
-      APPROVE: {
-        title: "Application approved",
-        body: `Your application for ${application.property.name} was approved.`,
-      },
-      REJECT: {
-        title: "Application not approved",
-        body: input.decisionReason?.trim()
-          ? `Your application for ${application.property.name} was not approved: ${input.decisionReason.trim()}`
-          : `Your application for ${application.property.name} was not approved.`,
-      },
-      CLARIFICATION: {
-        title: "Clarification requested",
-        body: input.decisionReason?.trim()
-          ? `The merchant needs more information for your application on ${application.property.name}: ${input.decisionReason.trim()}`
-          : `The merchant requested clarification for your application on ${application.property.name}.`,
-      },
-    }[input.decision];
-
     await notificationService.create({
       userId: application.tenant.userId,
-      title: notificationCopy.title,
-      body: notificationCopy.body,
+      title: `Application ${statusMap[input.decision].toLowerCase().replace("_", " ")}`,
+      body: `Your application for ${application.property.name} was updated.`,
     });
 
     await auditService.log({
@@ -245,73 +188,10 @@ export class ApplicationService {
       entityId: applicationId,
     });
 
-    return updated;
-  }
-
-  async respondToClarification(
-    applicationId: string,
-    tenantId: string,
-    userId: string,
-    input: RespondToClarificationInput
-  ) {
-    const application = await prisma.propertyApplication.findFirst({
-      where: { id: applicationId, tenantId },
-      include: {
-        property: { include: { landlord: { include: { user: true } } } },
-        documents: true,
-      },
-    });
-
-    if (!application) {
-      throw new AppError("Application not found", 404);
+    if (input.decision === "APPROVE") {
+      const { financingService } = await import("@/lib/services/financing.service");
+      await financingService.tryActivatePendingRequests(application.tenantId, application.propertyId);
     }
-
-    if (application.status !== "CLARIFICATION_REQUIRED") {
-      throw new AppError("This application is not waiting for clarification", 400);
-    }
-
-    const responseNote = input.responseNote?.trim();
-    if (!responseNote && application.documents.length === 0) {
-      throw new AppError(
-        "Add a response note or upload at least one supporting document before submitting.",
-        400
-      );
-    }
-
-    const notes = responseNote
-      ? [application.notes?.trim(), `Buyer response: ${responseNote}`]
-          .filter(Boolean)
-          .join("\n\n")
-      : application.notes;
-
-    const updated = await prisma.propertyApplication.update({
-      where: { id: applicationId },
-      data: {
-        status: "UNDER_REVIEW",
-        notes,
-        reviewedAt: null,
-        reviewedBy: null,
-      },
-      include: {
-        property: { include: { images: { take: 1 } } },
-        documents: true,
-        financingRequests: { select: { id: true, status: true } },
-      },
-    });
-
-    await notificationService.create({
-      userId: application.property.landlord.userId,
-      title: "Application clarification received",
-      body: `The buyer responded to your clarification request for ${application.property.name}.`,
-      metadata: { propertyId: application.propertyId, applicationId },
-    });
-
-    await auditService.log({
-      userId,
-      action: "APPLICATION_CLARIFICATION_RESPONDED",
-      entity: "PropertyApplication",
-      entityId: applicationId,
-    });
 
     return updated;
   }

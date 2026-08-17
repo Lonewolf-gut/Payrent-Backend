@@ -69,12 +69,7 @@ export class DemoFinancingService {
       case "ELIGIBILITY_PENDING":
         return "Admin approves eligibility";
       case "MANDATE_PENDING":
-        if (!mandateStatus) return "Buyer creates repayment mandate";
-        if (mandateStatus === "BANK_PROCESSING") return "Activate mandate (bank sandbox)";
-        if (["ADMIN_REVIEW", "PENDING_MANUAL_RESOLUTION"].includes(mandateStatus)) {
-          return "Admin approves mandate";
-        }
-        return "Complete mandate setup";
+        return "Demo stops here — bank mandate would be sent next";
       case "READY_FOR_LENDER_REVIEW":
       case "PENDING":
       case "UNDER_REVIEW":
@@ -111,6 +106,13 @@ export class DemoFinancingService {
     const steps: DemoFinancingStep[] = [];
     const previousStatus = request.status;
 
+    if (request.status === "CREATED") {
+      throw new AppError(
+        "Waiting for merchant application approval and admin financing document review.",
+        400
+      );
+    }
+
     if (request.status === "ELIGIBILITY_PENDING") {
       await financingService.adminReviewRequest(financingRequestId, adminUserId, "APPROVE");
       steps.push({
@@ -119,7 +121,11 @@ export class DemoFinancingService {
         action: "Admin approved eligibility",
       });
     } else if (request.status === "MANDATE_PENDING") {
-      await this.ensureActiveMandate(request, adminUserId, steps);
+      throw new AppError(
+        "Demo walkthrough stops before sending the repayment mandate to the bank.",
+        400,
+        "DEMO_STOPS_BEFORE_BANK"
+      );
     } else if (
       ["READY_FOR_LENDER_REVIEW", "PENDING", "UNDER_REVIEW"].includes(request.status)
     ) {
@@ -174,6 +180,7 @@ export class DemoFinancingService {
 
     for (let i = 0; i < maxIterations; i++) {
       const state = await this.getWalkthroughState(financingRequestId);
+      if (state.status === "MANDATE_PENDING") break;
       if (state.status === "REPAYMENT_ACTIVE") break;
       if (state.status === "REJECTED") {
         throw new AppError("Financing request was rejected — create a new request", 400);
@@ -182,6 +189,7 @@ export class DemoFinancingService {
       lastResult = await this.advanceOneStep(financingRequestId, adminUserId);
       allSteps.push(...lastResult.steps);
 
+      if (lastResult.currentStatus === "MANDATE_PENDING") break;
       if (lastResult.currentStatus === "REPAYMENT_ACTIVE") break;
     }
 
