@@ -1,5 +1,6 @@
 import { PrismaClient, type UserRole } from "@prisma/client";
 import bcrypt from "bcryptjs";
+import { seedDemoCategoryListings } from "./demo-listings";
 
 const prisma = new PrismaClient();
 
@@ -93,13 +94,22 @@ async function main() {
 
   const tenant = await prisma.tenant.upsert({
     where: { userId: tenantUser.id },
-    update: { fullName: "Demo Buyer" },
+    update: {
+      fullName: "Demo Buyer",
+      kycVerified: true,
+      addressVerified: true,
+      employmentVerified: true,
+      profileStatus: "KYC_VERIFIED",
+    },
     create: {
       userId: tenantUser.id,
       fullName: "Demo Buyer",
       employmentStatus: "EMPLOYED",
       monthlyIncome: 5000,
       kycVerified: true,
+      addressVerified: true,
+      employmentVerified: true,
+      profileStatus: "KYC_VERIFIED",
     },
   });
 
@@ -241,6 +251,68 @@ async function main() {
     });
   }
 
+  const demoListingResults = await seedDemoCategoryListings(prisma, landlord.id);
+
+  const demoFinancingProperties = await prisma.property.findMany({
+    where: {
+      landlordId: landlord.id,
+      OR: [
+        { name: "Modern 2BR Apartment - East Legon" },
+        { name: { startsWith: "[Demo]" } },
+      ],
+    },
+    select: { id: true, name: true },
+    take: 3,
+  });
+
+  for (const docType of ["PAYSLIP", "BANK_STATEMENT"] as const) {
+    await prisma.tenantFinancingDocument.upsert({
+      where: {
+        tenantId_documentType: { tenantId: tenant.id, documentType: docType },
+      },
+      update: {
+        status: "APPROVED",
+        reviewedAt: new Date(),
+        reviewedBy: admin.id,
+      },
+      create: {
+        tenantId: tenant.id,
+        documentType: docType,
+        fileName: `demo-${docType.toLowerCase()}.pdf`,
+        fileUrl: `/uploads/demo/${docType.toLowerCase()}.pdf`,
+        status: "APPROVED",
+        reviewedAt: new Date(),
+        reviewedBy: admin.id,
+      },
+    });
+  }
+
+  for (const property of demoFinancingProperties) {
+    const existingApp = await prisma.propertyApplication.findFirst({
+      where: {
+        tenantId: tenant.id,
+        propertyId: property.id,
+        status: { in: ["SUBMITTED", "UNDER_REVIEW", "APPROVED"] },
+      },
+    });
+
+    if (!existingApp) {
+      await prisma.propertyApplication.create({
+        data: {
+          tenantId: tenant.id,
+          propertyId: property.id,
+          status: "APPROVED",
+          notes: "Demo pre-approved for Pay-for-Me financing walkthrough",
+        },
+      });
+    } else if (existingApp.status !== "APPROVED") {
+      await prisma.propertyApplication.update({
+        where: { id: existingApp.id },
+        data: { status: "APPROVED" },
+      });
+    }
+  }
+
   console.log("Seed completed:", {
     admin: admin.email,
     buyer: tenantUser.email,
@@ -249,6 +321,12 @@ async function main() {
     lender: lenderUser.email,
     compliance: complianceUser.email,
   });
+  console.log(
+    `Demo category listings: ${demoListingResults.length} (5 cars + 5 appliances, prefixed [Demo])`
+  );
+  console.log(
+    `Demo financing ready on ${demoFinancingProperties.length} listings for ${tenantUser.email}`
+  );
   console.log("Demo password for all: Password123!");
 }
 
