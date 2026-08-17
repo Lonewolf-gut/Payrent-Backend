@@ -1,4 +1,9 @@
 import { z } from "zod";
+import {
+  ID_DOCUMENT_FORMATS,
+  SSNIT_NUMBER_FORMAT,
+  type IdentityDocumentType,
+} from "@/lib/constants/identity-document-formats";
 
 export const entityTypeSchema = z.enum(["INDIVIDUAL", "COMPANY"]);
 
@@ -36,7 +41,18 @@ export const profileSchema = z
     monthlyIncome: optionalIncome,
     residentialAddress: optionalText(5),
     staffId: optionalText(2),
-    ssnitNumber: optionalText(6),
+    ssnitNumber: z.preprocess(
+      emptyToUndefined,
+      z
+        .string()
+        .trim()
+        .length(
+          SSNIT_NUMBER_FORMAT.exactLength,
+          SSNIT_NUMBER_FORMAT.message
+        )
+        .regex(SSNIT_NUMBER_FORMAT.pattern, SSNIT_NUMBER_FORMAT.message)
+        .optional()
+    ),
     employmentStatus: z.preprocess(emptyToUndefined, employmentStatusSchema.optional()),
     companyName: optionalText(2),
     companyRegistrationNumber: optionalText(2),
@@ -100,13 +116,17 @@ export const identityVerifySchema = z
   })
   .superRefine((data, ctx) => {
     if (data.entityType === "INDIVIDUAL") {
-      if (
-        data.documentType === "GHANA_CARD" &&
-        !/^GHA-\d{9}-\d$/.test(data.idNumber)
-      ) {
+      const rule = ID_DOCUMENT_FORMATS[data.documentType as IdentityDocumentType];
+      if (data.idNumber.length !== rule.exactLength) {
         ctx.addIssue({
           code: "custom",
-          message: "Invalid Ghana Card format (GHA-XXXXXXXXX-X)",
+          message: rule.message,
+          path: ["idNumber"],
+        });
+      } else if (!rule.pattern.test(data.idNumber)) {
+        ctx.addIssue({
+          code: "custom",
+          message: rule.message,
           path: ["idNumber"],
         });
       }
@@ -140,8 +160,9 @@ export const employmentVerifySchema = z.object({
   staffId: z.string().min(2, "Staff ID is required."),
   ssnitNumber: z
     .string()
-    .min(6, "SSNIT number is required for employed users.")
-    .regex(/^[A-Za-z0-9-]+$/, "Enter a valid SSNIT number."),
+    .trim()
+    .length(SSNIT_NUMBER_FORMAT.exactLength, SSNIT_NUMBER_FORMAT.message)
+    .regex(SSNIT_NUMBER_FORMAT.pattern, SSNIT_NUMBER_FORMAT.message),
   employerName: optionalText(2),
   occupation: optionalText(2),
 });
@@ -165,7 +186,12 @@ export const addressVerifySchema = z
 export const ghanaCardVerifySchema = z.object({
   ghanaCardNumber: z
     .string()
-    .regex(/^GHA-\d{9}-\d$/, "Invalid Ghana Card format (GHA-XXXXXXXXX-X)"),
+    .trim()
+    .length(
+      ID_DOCUMENT_FORMATS.GHANA_CARD.exactLength,
+      ID_DOCUMENT_FORMATS.GHANA_CARD.message
+    )
+    .regex(ID_DOCUMENT_FORMATS.GHANA_CARD.pattern, ID_DOCUMENT_FORMATS.GHANA_CARD.message),
   fullName: z.string().min(2),
   dateOfBirth: z.preprocess(emptyToUndefined, z.string().optional()),
   documentType: identityDocumentTypeSchema.optional(),
