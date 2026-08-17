@@ -5,7 +5,7 @@ import { getSubscriptionAccess } from "@/lib/subscription/access";
 import { roleRequiresSubscription } from "@/lib/subscription/roles";
 import { AppError } from "@/lib/errors";
 import { apiResponse, withAuth } from "@/lib/api/handler";
-import { isPaymentDemoMode } from "@/lib/services/payment/demo-mode";
+import { getPaymentProvider } from "@/lib/services/payment/provider";
 import type { SubscriptionPlan, BillingCycle } from "@prisma/client";
 
 export const GET = withAuth(async (_req, _ctx, session) => {
@@ -14,12 +14,7 @@ export const GET = withAuth(async (_req, _ctx, session) => {
     getSubscriptionAccess(session.user.id),
   ]);
   const features = subscriptionService.getPlanFeatures(sub?.plan ?? "FREE");
-  return apiResponse({
-    subscription: sub,
-    access,
-    ...features,
-    paymentDemoMode: isPaymentDemoMode(),
-  });
+  return apiResponse({ subscription: sub, access, ...features });
 });
 
 export const POST = withAuth(async (req: NextRequest, _ctx, session) => {
@@ -29,11 +24,7 @@ export const POST = withAuth(async (req: NextRequest, _ctx, session) => {
     plan: z.enum(["PRO", "MAX", "PREMIUM"]).optional(),
     billingCycle: z.enum(["MONTHLY", "ANNUAL"]).optional(),
     paymentMethod: z.enum(["momo"]).optional(),
-    bankAccountId: z
-      .preprocess(
-        (value) => (value === "" || value === null || value === undefined ? undefined : value),
-        z.string().cuid().optional()
-      ),
+    bankAccountId: z.string().cuid().optional(),
   });
   const parsed = schema.safeParse(body);
   if (!parsed.success) return apiResponse({ error: "Invalid input" }, 400);
@@ -56,27 +47,20 @@ export const POST = withAuth(async (req: NextRequest, _ctx, session) => {
 
   const plan = (parsed.data.plan ?? "PRO") as SubscriptionPlan;
   const billingCycle = (parsed.data.billingCycle ?? "MONTHLY") as BillingCycle;
+  const provider = getPaymentProvider();
 
-  if (isPaymentDemoMode()) {
-    const subscription = await subscriptionService.upgrade(
+  if (provider === "demo") {
+    const checkout = await subscriptionService.upgradeWithDemo(
       session.user.id,
+      session.user.role,
       plan,
       billingCycle
     );
 
     return apiResponse(
-      {
-        subscription,
-        checkout: {
-          provider: "demo",
-          status: "SUCCESSFUL",
-          demoCompleted: true,
-          plan,
-          billingCycle,
-        },
-      },
-      200,
-      `${plan === "MAX" ? "Max" : "Pro"} plan activated immediately (demo mode — no payment collected).`
+      { checkout },
+      202,
+      checkout.message ?? "Continue to demo checkout to activate your subscription."
     );
   }
 

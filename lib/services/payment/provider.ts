@@ -1,11 +1,17 @@
 import { isHubtelPaymentsConfigured } from "@/lib/integrations/hubtel/config";
 import { isPaystackConfigured } from "@/lib/integrations/paystack/config";
 
-export type PaymentProviderName = "hubtel" | "paystack" | "momo" | "log";
+export type PaymentProviderName = "hubtel" | "paystack" | "momo" | "log" | "demo";
 
 export function getPaymentProvider(): PaymentProviderName {
   const value = (process.env.PAYMENT_PROVIDER || "momo").trim().toLowerCase();
-  if (value === "paystack" || value === "hubtel" || value === "momo" || value === "log") {
+  if (
+    value === "paystack" ||
+    value === "hubtel" ||
+    value === "momo" ||
+    value === "log" ||
+    value === "demo"
+  ) {
     return value;
   }
   return "momo";
@@ -13,6 +19,7 @@ export function getPaymentProvider(): PaymentProviderName {
 
 export function isPaymentCollectionConfigured() {
   const provider = getPaymentProvider();
+  if (provider === "demo") return true;
   if (provider === "paystack") return isPaystackConfigured();
   if (provider === "hubtel") return isHubtelPaymentsConfigured();
   if (provider === "momo") {

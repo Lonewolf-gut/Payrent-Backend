@@ -30,11 +30,12 @@ export async function disburseToBankAccount(params: {
     return hubtelPaymentService.disburseToBankAccount(params);
   }
 
-  if (process.env.NODE_ENV === "development") {
+  if (provider === "demo" || process.env.NODE_ENV === "development") {
     return {
-      provider: "sandbox" as const,
-      reference: params.reference ?? `PAY-${Date.now()}`,
+      provider: "demo" as const,
+      reference: params.reference ?? `DEMO-PAY-${Date.now()}`,
       status: "SUCCESSFUL" as const,
+      message: "Demo payout sent to bank account (simulated).",
     };
   }
 
@@ -66,11 +67,12 @@ export async function disburseToMobileMoney(params: {
     });
   }
 
-  if (process.env.NODE_ENV === "development") {
+  if (provider === "demo" || process.env.NODE_ENV === "development") {
     return {
-      provider: "sandbox" as const,
-      reference: params.reference ?? `PAY-${Date.now()}`,
+      provider: "demo" as const,
+      reference: params.reference ?? `DEMO-MOMO-${Date.now()}`,
       status: "SUCCESSFUL" as const,
+      message: "Demo payout sent to Mobile Money (simulated).",
     };
   }
 

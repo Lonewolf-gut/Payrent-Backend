@@ -2,6 +2,7 @@ import { momoService } from "@/lib/services/payment/momo.service";
 import { momoPaymentService } from "@/lib/services/payment/momo-payment.service";
 import { hubtelPaymentService } from "@/lib/services/payment/hubtel-payment.service";
 import { paystackPaymentService } from "@/lib/services/payment/paystack-payment.service";
+import { demoPaymentService } from "@/lib/services/payment/demo-payment.service";
 import {
   getPaymentProvider,
   isPaymentCollectionConfigured,
@@ -28,6 +29,10 @@ export type WalletDepositRequest = {
 export class PaymentService {
   async requestWalletDeposit(input: WalletDepositRequest) {
     const provider = getPaymentProvider();
+
+    if (provider === "demo") {
+      return demoPaymentService.requestWalletDeposit(input);
+    }
 
     if (provider === "momo") {
       return momoPaymentService.requestWalletDepositFromAccount(input);
@@ -65,6 +70,15 @@ export class PaymentService {
     }
 
     const provider = getPaymentProvider();
+
+    if (provider === "demo") {
+      return demoPaymentService.requestWalletDeposit({
+        userId: input.userId,
+        walletType: input.walletType,
+        amount: input.amount,
+        description: input.description,
+      });
+    }
 
     if (provider === "momo") {
       if (!input.phone) {
@@ -132,6 +146,10 @@ export class PaymentService {
 
     if (provider === "hubtel") {
       return hubtelPaymentService.verifyCollection(reference);
+    }
+
+    if (provider === "demo") {
+      return demoPaymentService.verifyCollection(reference);
     }
 
     return {

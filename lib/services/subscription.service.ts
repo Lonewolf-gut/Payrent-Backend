@@ -34,15 +34,10 @@ function assertSubscriptionEligibleRole(role: UserRole) {
 
 export class SubscriptionService {
   async getCurrent(userId: string) {
-    const active = await prisma.subscription.findMany({
+    return prisma.subscription.findFirst({
       where: { userId, status: "ACTIVE" },
       orderBy: { createdAt: "desc" },
     });
-
-    if (!active.length) return null;
-
-    const paidPlan = active.find((subscription) => subscription.plan !== "FREE");
-    return paidPlan ?? active[0];
   }
 
   async upgradeWithPaystack(
@@ -107,6 +102,35 @@ export class SubscriptionService {
       plan,
       billingCycle,
       bankAccountId,
+    });
+  }
+
+  async upgradeWithDemo(
+    userId: string,
+    role: UserRole,
+    plan: SubscriptionPlan,
+    billingCycle: BillingCycle
+  ) {
+    if (plan === "FREE") {
+      throw new AppError("Use cancel to return to the free plan");
+    }
+
+    assertSubscriptionEligibleRole(role);
+
+    const current = await this.getCurrent(userId);
+    if (hasActivePaidPlan(current?.plan, current?.status) && current?.plan === plan) {
+      throw new AppError(`You already have an active ${getPlanLabel(plan)} subscription`);
+    }
+
+    const { demoPaymentService } = await import(
+      "@/lib/services/payment/demo-payment.service"
+    );
+
+    return demoPaymentService.requestSubscriptionPayment({
+      userId,
+      role,
+      plan,
+      billingCycle,
     });
   }
 
