@@ -350,7 +350,6 @@ model User {
   dataConsents      DataConsent[]
   feeDisclosuresAsTenant FeeDisclosureRecord[] @relation("FeeDisclosureTenant")
   feeDisclosuresAsLender FeeDisclosureRecord[] @relation("FeeDisclosureLender")
-  financingLenderTagsCreated FinancingRequestLenderTag[] @relation("LenderTagCreatedBy")
 
   @@index([email])
   @@index([role])
@@ -476,7 +475,6 @@ model Lender {
 
   user         User          @relation(fields: [userId], references: [id], onDelete: Cascade)
   investments  Investment[]
-  financingTags FinancingRequestLenderTag[]
 }
 
 model AgentProfile {
@@ -791,12 +789,32 @@ model FinancingRequest {
   repaymentPlan RepaymentPlan?
   settlements   SettlementRecord[]
   feeDisclosure FeeDisclosureRecord?
-  lenderTags    FinancingRequestLenderTag[]
+  documents     FinancingRequestDocument[]
 
   @@index([tenantId])
   @@index([status])
   @@index([applicationId])
   @@index([mandateId])
+}
+
+model FinancingRequestDocument {
+  id                 String                   @id @default(cuid())
+  financingRequestId String
+  documentType       TenantFinancingDocType
+  fileName           String
+  fileUrl            String
+  status             FinancingDocReviewStatus @default(PENDING)
+  reviewNotes        String?
+  reviewedAt         DateTime?
+  reviewedBy         String?
+  createdAt          DateTime                 @default(now())
+  updatedAt          DateTime                 @updatedAt
+
+  financingRequest FinancingRequest @relation(fields: [financingRequestId], references: [id], onDelete: Cascade)
+
+  @@unique([financingRequestId, documentType])
+  @@index([financingRequestId])
+  @@index([status])
 }
 
 model Investment {
@@ -812,25 +830,6 @@ model Investment {
 
   lender           Lender           @relation(fields: [lenderId], references: [id], onDelete: Cascade)
   financingRequest FinancingRequest @relation(fields: [financingRequestId], references: [id], onDelete: Cascade)
-}
-
-model FinancingRequestLenderTag {
-  id                 String   @id @default(cuid())
-  financingRequestId String
-  lenderId           String
-  taggedByUserId     String
-  reason             String?
-  notifiedAt         DateTime?
-  createdAt          DateTime @default(now())
-  updatedAt          DateTime @updatedAt
-
-  financingRequest FinancingRequest @relation(fields: [financingRequestId], references: [id], onDelete: Cascade)
-  lender           Lender           @relation(fields: [lenderId], references: [id], onDelete: Cascade)
-  taggedBy         User             @relation("LenderTagCreatedBy", fields: [taggedByUserId], references: [id], onDelete: Cascade)
-
-  @@unique([financingRequestId, lenderId])
-  @@index([lenderId])
-  @@index([financingRequestId])
 }
 
 model RepaymentPlan {

@@ -287,27 +287,6 @@ async function main() {
     take: 3,
   });
 
-  for (const docType of ["PAYSLIP", "BANK_STATEMENT"] as const) {
-    await prisma.tenantFinancingDocument.upsert({
-      where: {
-        tenantId_documentType: { tenantId: tenant.id, documentType: docType },
-      },
-      update: {
-        status: "PENDING",
-        reviewedAt: null,
-        reviewedBy: null,
-        reviewNotes: null,
-      },
-      create: {
-        tenantId: tenant.id,
-        documentType: docType,
-        fileName: `demo-${docType.toLowerCase()}.pdf`,
-        fileUrl: `/uploads/demo/${docType.toLowerCase()}.pdf`,
-        status: "PENDING",
-      },
-    });
-  }
-
   for (const property of demoFinancingProperties) {
     const existingApp = await prisma.propertyApplication.findFirst({
       where: {
@@ -317,13 +296,59 @@ async function main() {
       },
     });
 
-    if (!existingApp) {
-      await prisma.propertyApplication.create({
+    let application = existingApp;
+    if (!application) {
+      application = await prisma.propertyApplication.create({
         data: {
           tenantId: tenant.id,
           propertyId: property.id,
           status: "SUBMITTED",
           notes: "Demo application — merchant review required",
+        },
+      });
+    }
+
+    const existingRequest = await prisma.financingRequest.findFirst({
+      where: { tenantId: tenant.id, propertyId: property.id, status: "CREATED" },
+    });
+
+    const financingRequest =
+      existingRequest ??
+      (await prisma.financingRequest.create({
+        data: {
+          tenantId: tenant.id,
+          propertyId: property.id,
+          applicationId: application.id,
+          requestedAmount: 5000,
+          durationMonths: 12,
+          status: "CREATED",
+          repaymentPreference: {
+            preferredChannel: "BANK_MANDATE",
+            mandateDebitConsent: true,
+          },
+        },
+      }));
+
+    for (const docType of ["PAYSLIP", "BANK_STATEMENT"] as const) {
+      await prisma.financingRequestDocument.upsert({
+        where: {
+          financingRequestId_documentType: {
+            financingRequestId: financingRequest.id,
+            documentType: docType,
+          },
+        },
+        update: {
+          status: "PENDING",
+          reviewedAt: null,
+          reviewedBy: null,
+          reviewNotes: null,
+        },
+        create: {
+          financingRequestId: financingRequest.id,
+          documentType: docType,
+          fileName: `demo-${docType.toLowerCase()}.pdf`,
+          fileUrl: `/uploads/demo/${docType.toLowerCase()}.pdf`,
+          status: "PENDING",
         },
       });
     }

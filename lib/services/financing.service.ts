@@ -5,7 +5,7 @@ import { notificationService } from "@/lib/services/notification.service";
 import { settlementService } from "@/lib/services/settlement.service";
 import { AppError } from "@/lib/errors";
 import type { ApproveFinancingInput } from "@/lib/validations/financing";
-import { tenantFinancingDocService } from "@/lib/services/tenant-financing-doc.service";
+import { financingRequestDocService } from "@/lib/services/financing-request-doc.service";
 import { agentCommissionService } from "@/lib/services/agent-commission.service";
 import { calculateAgentCommission } from "@/lib/constants/agent-commission";
 import { auditService } from "@/lib/services/audit.service";
@@ -75,15 +75,20 @@ export class FinancingService {
     return application;
   }
 
-  private async prerequisitesMet(tenantId: string, applicationId: string) {
-    const [application, docsApproved] = await Promise.all([
-      prisma.propertyApplication.findFirst({
-        where: { id: applicationId, tenantId, status: "APPROVED" },
-      }),
-      tenantFinancingDocService.areFinancingDocsApproved(tenantId),
+  private async prerequisitesMet(financingRequestId: string) {
+    const request = await prisma.financingRequest.findUnique({
+      where: { id: financingRequestId },
+      include: { application: true },
+    });
+
+    if (!request?.applicationId || !request.application) return false;
+
+    const [applicationApproved, docsApproved] = await Promise.all([
+      Promise.resolve(request.application.status === "APPROVED"),
+      financingRequestDocService.areFinancingDocsApproved(financingRequestId),
     ]);
 
-    return Boolean(application && docsApproved);
+    return applicationApproved && docsApproved;
   }
 
   async submitRequest(
@@ -142,7 +147,9 @@ export class FinancingService {
       throw new AppError("You already have an active Pay-for-Me request for this listing", 409);
     }
 
-    const ready = await this.prerequisitesMet(tenantId, application.id);
+    const ready = existing
+      ? await this.prerequisitesMet(existing.id)
+      : false;
 
     if (ready) {
       if (existing?.status === "CREATED") {
@@ -277,7 +284,7 @@ export class FinancingService {
     for (const request of pending) {
       if (!request.applicationId) continue;
 
-      const ready = await this.prerequisitesMet(tenantId, request.applicationId);
+      const ready = await this.prerequisitesMet(request.id);
       if (!ready) continue;
 
       await this.activateQueuedRequest(request.id);
@@ -302,7 +309,7 @@ export class FinancingService {
       throw new AppError("Queued financing request not found", 404);
     }
 
-    const ready = await this.prerequisitesMet(request.tenantId, request.applicationId);
+    const ready = await this.prerequisitesMet(financingRequestId);
     if (!ready) {
       throw new AppError("Application and financing documents must be approved first", 400);
     }
@@ -411,10 +418,17 @@ export class FinancingService {
     monthlyIncome?: number
   ) {
     await this.assertEligibility(tenantId);
-    await tenantFinancingDocService.assertFinancingDocsApproved(tenantId);
 
     if (!applicationId) {
       throw new AppError("An approved property application is required", 400);
+    }
+
+    const queuedRequest = await prisma.financingRequest.findFirst({
+      where: { tenantId, applicationId, propertyId, status: "CREATED" },
+      orderBy: { createdAt: "desc" },
+    });
+    if (queuedRequest) {
+      await financingRequestDocService.assertFinancingDocsApproved(queuedRequest.id);
     }
 
     const application = await prisma.propertyApplication.findFirst({

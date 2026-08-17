@@ -1,7 +1,7 @@
 import { NextRequest } from "next/server";
 import { z } from "zod";
 import { apiResponse, withAuth } from "@/lib/api/handler";
-import { tenantFinancingDocService } from "@/lib/services/tenant-financing-doc.service";
+import { financingRequestDocService } from "@/lib/services/financing-request-doc.service";
 
 const reviewSchema = z.object({
   documentId: z.string().cuid(),
@@ -16,7 +16,7 @@ export const GET = withAuth(
       status === "PENDING" || status === "APPROVED" || status === "REJECTED"
         ? status
         : undefined;
-    const data = await tenantFinancingDocService.listForAdmin(parsed);
+    const data = await financingRequestDocService.listForAdmin(parsed);
     return apiResponse(data);
   },
   { roles: ["ADMIN"] }
@@ -27,7 +27,7 @@ export const PATCH = withAuth(
     const parsed = reviewSchema.safeParse(await req.json());
     if (!parsed.success) return apiResponse({ error: "Invalid input" }, 400);
 
-    const doc = await tenantFinancingDocService.review(
+    const doc = await financingRequestDocService.review(
       parsed.data.documentId,
       session.user.id,
       parsed.data.status,

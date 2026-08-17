@@ -8,16 +8,14 @@ export type FileAccessScope =
   | "financing"
   | "application"
   | "mandate"
-  | "property-document"
-  | "profile";
+  | "property-document";
 
 type AccessRequest =
   | { scope: "kyc"; documentId: string }
   | { scope: "financing"; documentId: string }
   | { scope: "application"; documentId: string }
   | { scope: "mandate"; mandateId: string }
-  | { scope: "property-document"; fileKey: string }
-  | { scope: "profile" };
+  | { scope: "property-document"; fileKey: string };
 
 async function assertKycDocumentAccess(documentId: string, userId: string, role: string) {
   const document = await prisma.kycDocument.findUnique({
@@ -34,6 +32,26 @@ async function assertKycDocumentAccess(documentId: string, userId: string, role:
 }
 
 async function assertFinancingDocumentAccess(documentId: string, userId: string, role: string) {
+  const requestDocument = await prisma.financingRequestDocument.findUnique({
+    where: { id: documentId },
+    select: {
+      id: true,
+      fileUrl: true,
+      fileName: true,
+      documentType: true,
+      financingRequest: {
+        select: { tenant: { select: { userId: true } } },
+      },
+    },
+  });
+
+  if (requestDocument) {
+    const isOwner = requestDocument.financingRequest.tenant.userId === userId;
+    const isReviewer = role === "ADMIN" || role === "COMPLIANCE_OFFICER";
+    if (!isOwner && !isReviewer) throw new Error("You do not have access to this document.");
+    return { ...requestDocument, financingRequest: requestDocument.financingRequest };
+  }
+
   const document = await prisma.tenantFinancingDocument.findUnique({
     where: { id: documentId },
     select: { id: true, tenantId: true, fileUrl: true, fileName: true, documentType: true },
@@ -130,7 +148,10 @@ export async function resolveProtectedFileAccess(params: {
         params.role
       );
       fileKey = normalizeStoredFileReference(document.fileUrl);
-      entity = "TenantFinancingDocument";
+      entity =
+        "financingRequest" in document
+          ? "FinancingRequestDocument"
+          : "TenantFinancingDocument";
       entityId = document.id;
       fileName = document.fileName;
       break;
@@ -167,18 +188,6 @@ export async function resolveProtectedFileAccess(params: {
       entity = "PropertyDocument";
       entityId = fileKey;
       fileName = fileKey.split("/").pop() ?? "property-document";
-      break;
-    }
-    case "profile": {
-      const user = await prisma.user.findUnique({
-        where: { id: params.userId },
-        select: { image: true },
-      });
-      if (!user?.image) throw new Error("Profile image not found.");
-      fileKey = normalizeStoredFileReference(user.image);
-      entity = "User";
-      entityId = params.userId;
-      fileName = "profile-image";
       break;
     }
   }
