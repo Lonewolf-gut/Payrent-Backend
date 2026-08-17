@@ -4,7 +4,7 @@ export const financingRequestSchema = z.object({
   propertyId: z.string().cuid(),
   applicationId: z.string().cuid().optional(),
   requestedAmount: z.number().positive(),
-  durationMonths: z.number().int().min(6).max(60),
+  durationMonths: z.number().int().min(3).max(60),
   notes: z.string().max(500).optional(),
   monthlyIncome: z.number().positive().optional(),
   repaymentPreference: z
@@ -13,6 +13,8 @@ export const financingRequestSchema = z.object({
       preferredChannel: z.enum(["BANK_MANDATE", "WALLET", "MOBILE_MONEY"]).optional(),
       contactPhone: z.string().max(20).optional(),
       contactEmail: z.string().email().optional(),
+      bankAccountId: z.string().cuid().optional(),
+      mandateDebitConsent: z.boolean().optional(),
     })
     .optional(),
   dataProcessingConsent: z.literal(true, {

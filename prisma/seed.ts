@@ -293,18 +293,17 @@ async function main() {
         tenantId_documentType: { tenantId: tenant.id, documentType: docType },
       },
       update: {
-        status: "APPROVED",
-        reviewedAt: new Date(),
-        reviewedBy: admin.id,
+        status: "PENDING",
+        reviewedAt: null,
+        reviewedBy: null,
+        reviewNotes: null,
       },
       create: {
         tenantId: tenant.id,
         documentType: docType,
         fileName: `demo-${docType.toLowerCase()}.pdf`,
         fileUrl: `/uploads/demo/${docType.toLowerCase()}.pdf`,
-        status: "APPROVED",
-        reviewedAt: new Date(),
-        reviewedBy: admin.id,
+        status: "PENDING",
       },
     });
   }
@@ -323,14 +322,9 @@ async function main() {
         data: {
           tenantId: tenant.id,
           propertyId: property.id,
-          status: "APPROVED",
-          notes: "Demo pre-approved for Pay-for-Me financing walkthrough",
+          status: "SUBMITTED",
+          notes: "Demo application — merchant review required",
         },
-      });
-    } else if (existingApp.status !== "APPROVED") {
-      await prisma.propertyApplication.update({
-        where: { id: existingApp.id },
-        data: { status: "APPROVED" },
       });
     }
   }
@@ -347,7 +341,7 @@ async function main() {
     `Demo category listings: ${demoListingResults.length} (5 cars + 5 appliances, prefixed [Demo])`
   );
   console.log(
-    `Demo financing ready on ${demoFinancingProperties.length} listings for ${tenantUser.email}`
+    `Demo financing listings seeded for ${tenantUser.email} — applications and documents require merchant/admin review`
   );
   console.log("Demo password for all: Password123!");
 }

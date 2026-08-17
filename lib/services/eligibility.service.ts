@@ -7,6 +7,8 @@ export type RepaymentPreference = {
   preferredChannel?: "BANK_MANDATE" | "WALLET" | "MOBILE_MONEY";
   contactPhone?: string;
   contactEmail?: string;
+  bankAccountId?: string;
+  mandateDebitConsent?: boolean;
 };
 
 export type AffordabilitySnapshot = {

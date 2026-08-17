@@ -102,6 +102,28 @@ export class FinancingService {
   ) {
     await this.assertEligibility(tenantId);
 
+    const tenant = await prisma.tenant.findUnique({ where: { id: tenantId } });
+    if (!tenant) throw new AppError("Customer profile required", 403);
+
+    const bankAccountId = input.repaymentPreference?.bankAccountId;
+    if (!bankAccountId) {
+      throw new AppError("Select a verified bank account for repayments", 400);
+    }
+
+    const bankAccount = await prisma.bankAccount.findFirst({
+      where: { id: bankAccountId, userId: tenant.userId, isVerified: true },
+    });
+    if (!bankAccount) {
+      throw new AppError("Add and verify a bank account before submitting a financing request", 400);
+    }
+
+    if (!input.repaymentPreference?.mandateDebitConsent) {
+      throw new AppError(
+        "You must consent to scheduled repayments being debited from your bank account",
+        400
+      );
+    }
+
     const application = await this.resolveApplicationId(
       tenantId,
       input.propertyId,
