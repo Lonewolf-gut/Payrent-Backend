@@ -54,7 +54,7 @@ export const DEMO_CAR_LISTINGS: DemoListingSeed[] = [
     description:
       "Demo listing — Honda CR-V 2021 SUV with leather interior and low mileage. Available for financing.",
     amenities: ["SUV", "4WD", "Sunroof", "Parking sensors"],
-    imageUrl: demoImage("photo-1609521263047-f8f205293bb4"),
+    imageUrl: demoImage("photo-1558618666-fcd25c85cd64"),
     stockQuantity: 1,
     deliveryTerms: "Delivery within Greater Kumasi available.",
     warrantyDetails: "6-month limited warranty.",
@@ -107,7 +107,7 @@ export const DEMO_CAR_LISTINGS: DemoListingSeed[] = [
     description:
       "Demo listing — nearly new Nissan Sentra 2022 with manufacturer service records.",
     amenities: ["Automatic", "AC", "Apple CarPlay", "Lane assist"],
-    imageUrl: demoImage("photo-1492144534655-ae79ce96cda9"),
+    imageUrl: demoImage("photo-1555215695-3004980ad54e"),
     stockQuantity: 1,
     deliveryTerms: "Ships from Takoradi within 5 days.",
     attributes: { make: "Nissan", model: "Sentra", year: 2022, mileageKm: 15000 },
@@ -127,7 +127,7 @@ export const DEMO_APPLIANCE_LISTINGS: DemoListingSeed[] = [
     description:
       "Demo listing — Samsung double-door refrigerator with inverter technology and water dispenser.",
     amenities: ["Inverter", "Water dispenser", "Frost free"],
-    imageUrl: demoImage("photo-1635755076115-73c36a93563e"),
+    imageUrl: demoImage("photo-1595526114035-0d45ed16cfbf"),
     stockQuantity: 3,
     deliveryTerms: "Free delivery within Accra for orders confirmed before Friday.",
     warrantyDetails: "1-year manufacturer warranty.",
@@ -180,7 +180,7 @@ export const DEMO_APPLIANCE_LISTINGS: DemoListingSeed[] = [
     description:
       "Demo listing — Midea split AC 1.5HP with installation kit. Ideal for bedroom or office.",
     amenities: ["Split unit", "1.5HP", "Remote control"],
-    imageUrl: demoImage("photo-1585771725724-a2757cf49553"),
+    imageUrl: demoImage("photo-1581092160562-40aa08e78837"),
     stockQuantity: 6,
     deliveryTerms: "Installation available in Tema and Accra.",
     warrantyDetails: "12-month compressor warranty.",
@@ -198,7 +198,7 @@ export const DEMO_APPLIANCE_LISTINGS: DemoListingSeed[] = [
     description:
       "Demo listing — Philips rice cooker and multi-cooker bundle for home kitchens.",
     amenities: ["Multi-cook", "Non-stick", "Keep warm"],
-    imageUrl: demoImage("photo-1556909215-d1b3f9d1b3bf"),
+    imageUrl: demoImage("photo-1556909114-f6e7ad7d3136"),
     stockQuantity: 10,
     deliveryTerms: "Courier delivery nationwide within 7 days.",
     attributes: { brand: "Philips", capacityLitres: 5 },
