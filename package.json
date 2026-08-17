@@ -13,7 +13,7 @@
     "dev:reset": "node scripts/stop-dev.js && node scripts/remove-dev-cache-link.js && node scripts/clean-cache.js && npm install next@16.2.6 @next/swc-win32-x64-msvc@16.2.6 react@19.2.4 react-dom@19.2.4 --no-save",
     "dev:fix": "npm run dev:reset",
     "build": "npm run db:generate && npm run copy-prisma-client && next build --webpack",
-    "start": "next start",
+    "start": "node scripts/start-prod.js",
     "lint": "eslint",
     "test": "vitest run",
     "test:watch": "vitest",

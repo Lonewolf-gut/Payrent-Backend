@@ -1,10 +1,14 @@
 const { spawn } = require("node:child_process");
 const path = require("node:path");
+const { loadEnvConfig } = require("@next/env");
 
 require("./stop-dev.js");
 require("./remove-dev-cache-link.js");
 
 const { pruneTurbopackCache } = require("./prune-turbopack-cache.js");
+
+const projectRoot = path.join(__dirname, "..");
+loadEnvConfig(projectRoot);
 
 const nodeOptions = [
   process.env.NODE_OPTIONS,
@@ -13,7 +17,6 @@ const nodeOptions = [
   .filter(Boolean)
   .join(" ");
 
-const projectRoot = path.join(__dirname, "..");
 const nextCli = path.join(projectRoot, "node_modules", "next", "dist", "bin", "next");
 
 function resolveBundler() {
@@ -31,6 +34,7 @@ function resolveBundler() {
 
 const bundler = resolveBundler();
 const bundlerArgs = bundler === "webpack" ? ["--webpack"] : ["--turbopack"];
+const port = String(process.env.PORT || "3000").replace(/"/g, "");
 
 if (bundler === "turbopack") {
   pruneTurbopackCache();
@@ -50,19 +54,19 @@ if (bundler === "webpack") {
     console.log("Add this folder to Windows Defender exclusions if compiles stay slow.");
   }
 }
-console.log("After Ready, open http://localhost:3000");
+console.log(`After Ready, open http://localhost:${port}`);
 if (process.platform === "win32") {
   console.log("503 on /api/*? Run: npm run bring-up  (starts Docker Postgres + Redis)");
-  console.log("Check: http://localhost:3000/api/health");
+  console.log(`Check: http://localhost:${port}/api/health`);
 }
 console.log("");
 
 const child = spawn(
   process.execPath,
-  [nextCli, "dev", ...bundlerArgs, "--hostname", "0.0.0.0"],
+  [nextCli, "dev", ...bundlerArgs, "--hostname", "0.0.0.0", "-p", port],
   {
     stdio: "inherit",
-    env: { ...process.env, NODE_OPTIONS: nodeOptions },
+    env: { ...process.env, PORT: port, NODE_OPTIONS: nodeOptions },
     cwd: projectRoot,
   }
 );
