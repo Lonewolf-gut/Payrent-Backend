@@ -37,7 +37,7 @@ async function assertBuyerOwnsRequest(userId: string, financingRequestId: string
 }
 
 function canReplaceDocuments(application: PropertyApplication | null | undefined) {
-  return application?.status !== "APPROVED";
+  return application?.status === "SUBMITTED";
 }
 
 export class FinancingRequestDocService {
@@ -386,6 +386,56 @@ export class FinancingRequestDocService {
     }
 
     return doc;
+  }
+
+  async listApprovedRecords() {
+    const docs = await prisma.financingRequestDocument.findMany({
+      where: { status: "APPROVED" },
+      include: {
+        financingRequest: {
+          include: {
+            property: { select: { id: true, name: true, location: true } },
+            tenant: {
+              include: {
+                user: { select: { id: true, email: true, phone: true } },
+              },
+            },
+          },
+        },
+      },
+      orderBy: [{ reviewedAt: "desc" }, { createdAt: "desc" }],
+    });
+
+    const groups = new Map<
+      string,
+      {
+        tenantId: string;
+        fullName: string;
+        email: string;
+        phone?: string | null;
+        records: typeof docs;
+      }
+    >();
+
+    for (const doc of docs) {
+      const tenantId = doc.financingRequest.tenantId;
+      const existing = groups.get(tenantId);
+      if (existing) {
+        existing.records.push(doc);
+        continue;
+      }
+      groups.set(tenantId, {
+        tenantId,
+        fullName: doc.financingRequest.tenant.fullName,
+        email: doc.financingRequest.tenant.user.email,
+        phone: doc.financingRequest.tenant.user.phone,
+        records: [doc],
+      });
+    }
+
+    return Array.from(groups.values()).sort((a, b) =>
+      a.fullName.localeCompare(b.fullName)
+    );
   }
 }
 
