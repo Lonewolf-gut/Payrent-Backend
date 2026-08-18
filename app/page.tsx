@@ -3,7 +3,7 @@ import { auth } from "@/lib/auth";
 import { getPostLoginRoute } from "@/lib/auth/permissions";
 import { shouldRedirectStaffFromMarketing } from "@/lib/auth/route-guards";
 import MarketingLayout from "./(marketing)/layout";
-import HomePage from "./(marketing)/page";
+import HomePage from "@/components/marketing/home-page";
 
 export default async function RootPage() {
   const session = await auth();

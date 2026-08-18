@@ -8,6 +8,15 @@ const isProductionBuild = lifecycle === "build";
 const isWindowsDev = process.platform === "win32" && isDevLifecycle;
 const turboFsCacheEnabled = process.env.TURBOPACK_FS_CACHE === "1";
 
+/** Standalone tracing can fail on Windows for route groups like `(marketing)`. */
+function shouldUseStandaloneOutput() {
+  if (!isProductionBuild) return false;
+  if (process.env.NEXT_OUTPUT_STANDALONE === "0") return false;
+  if (process.env.NEXT_OUTPUT_STANDALONE === "1") return true;
+  // Default: standalone on Linux/macOS CI; skip on Windows local builds unless forced.
+  return process.platform !== "win32";
+}
+
 function cdnRemotePatterns() {
   const urls = [
     process.env.S3_PUBLIC_URL,
@@ -61,7 +70,7 @@ function uploadRemotePatterns() {
 
 const nextConfig: NextConfig = {
   distDir: isDevLifecycle ? ".next-dev" : ".next",
-  ...(isProductionBuild ? { output: "standalone" as const } : {}),
+  ...(shouldUseStandaloneOutput() ? { output: "standalone" as const } : {}),
   typescript: {
     ignoreBuildErrors: true,
   },
