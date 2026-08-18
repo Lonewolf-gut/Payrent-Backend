@@ -612,17 +612,10 @@ export class FinancingService {
       return db.financingRequest.update({
         where: { id: financingRequestId },
         data: {
-          status: "MANDATE_PENDING",
           adminReviewedAt: new Date(),
           adminReviewedByUserId: adminUserId,
         },
       });
-    });
-
-    await notificationService.create({
-      userId: request.tenant.userId,
-      title: "Financing request approved for mandate setup",
-      body: `Your financing request for ${request.property.name} passed eligibility review. Set up your repayment mandate to continue.`,
     });
 
     await auditService.log({
@@ -632,7 +625,63 @@ export class FinancingService {
       entityId: financingRequestId,
     });
 
+    return this.promoteToLenderReview(financingRequestId, adminUserId);
+  }
+
+  async promoteToLenderReview(financingRequestId: string, adminUserId: string) {
+    const request = await prisma.financingRequest.findUnique({
+      where: { id: financingRequestId },
+      include: { tenant: { include: { user: true } }, property: true },
+    });
+
+    if (!request) throw new AppError("Financing request not found", 404);
+
+    if (isDemoMode()) {
+      const { demoFinancingService } = await import("@/lib/services/demo-financing.service");
+      await demoFinancingService.ensureActiveMandateForFinancingRequest(
+        financingRequestId,
+        adminUserId
+      );
+    }
+
+    const updated = await prisma.financingRequest.update({
+      where: { id: financingRequestId },
+      data: { status: "READY_FOR_LENDER_REVIEW" },
+    });
+
+    await notificationService.create({
+      userId: request.tenant.userId,
+      title: "Waiting for lender to finance",
+      body: `Your financing request for ${request.property.name} is now with lenders for review.`,
+    });
+
+    await auditService.log({
+      userId: adminUserId,
+      action: "FINANCING_READY_FOR_LENDER",
+      entity: "FinancingRequest",
+      entityId: financingRequestId,
+    });
+
     return updated;
+  }
+
+  async advanceAfterAdminDocumentApproval(
+    financingRequestId: string,
+    adminUserId: string
+  ) {
+    const request = await prisma.financingRequest.findUnique({
+      where: { id: financingRequestId },
+    });
+    if (!request) return;
+
+    if (request.status === "ELIGIBILITY_PENDING") {
+      await this.adminReviewRequest(financingRequestId, adminUserId, "APPROVE");
+      return;
+    }
+
+    if (request.status === "MANDATE_PENDING") {
+      await this.promoteToLenderReview(financingRequestId, adminUserId);
+    }
   }
 
   async approveRequest(lenderId: string, input: ApproveFinancingInput) {

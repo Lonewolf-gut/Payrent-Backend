@@ -200,6 +200,34 @@ export class DemoFinancingService {
     return { ...lastResult, steps: allSteps };
   }
 
+  async ensureActiveMandateForFinancingRequest(
+    financingRequestId: string,
+    adminUserId: string
+  ) {
+    this.assertDemoEnabled();
+
+    const request = await prisma.financingRequest.findUnique({
+      where: { id: financingRequestId },
+      include: {
+        mandate: true,
+        tenant: { select: { userId: true } },
+      },
+    });
+
+    if (!request) throw new AppError("Financing request not found", 404);
+
+    await this.ensureActiveMandate(
+      {
+        id: request.id,
+        tenantId: request.tenantId,
+        mandate: request.mandate,
+        tenant: { userId: request.tenant.userId },
+      },
+      adminUserId,
+      []
+    );
+  }
+
   private async ensureActiveMandate(
     request: {
       id: string;

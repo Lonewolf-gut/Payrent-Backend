@@ -383,6 +383,14 @@ export class FinancingRequestDocService {
         doc.financingRequest.tenantId,
         doc.financingRequest.propertyId
       );
+
+      const allApproved = await this.areFinancingDocsApproved(doc.financingRequestId);
+      if (allApproved) {
+        await financingService.advanceAfterAdminDocumentApproval(
+          doc.financingRequestId,
+          adminUserId
+        );
+      }
     }
 
     return doc;
