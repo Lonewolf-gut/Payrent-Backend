@@ -265,7 +265,31 @@ export class FinancingService {
       entityId: request.id,
     });
 
+    await this.ensureDraftMandateForRequest(tenantId, userId, request.id);
+
     return request;
+  }
+
+  private async ensureDraftMandateForRequest(
+    tenantId: string,
+    userId: string,
+    financingRequestId: string
+  ) {
+    const request = await prisma.financingRequest.findFirst({
+      where: { id: financingRequestId, tenantId },
+    });
+    if (!request?.repaymentPreference) return;
+
+    const repaymentPreference = request.repaymentPreference as RepaymentPreference;
+    if (!repaymentPreference.bankAccountId) return;
+
+    const { mandateService } = await import("@/lib/services/mandate.service");
+    await mandateService.createDraftForFinancing(
+      tenantId,
+      userId,
+      financingRequestId,
+      repaymentPreference.bankAccountId
+    );
   }
 
   async tryActivatePendingRequests(tenantId: string, propertyId?: string) {
@@ -534,6 +558,8 @@ export class FinancingService {
         autoApproved: assessment.autoApproved,
       },
     });
+
+    await this.ensureDraftMandateForRequest(tenantId, request.tenant.userId, request.id);
 
     return request;
   }
@@ -903,7 +929,14 @@ export class FinancingService {
 
     const { mandateService } = await import("@/lib/services/mandate.service");
 
-    if (!request.mandateId) {
+    if (request.mandateId && request.mandate?.mandateSource === "SCANNED_UPLOAD") {
+      await prisma.financingRequest.update({
+        where: { id: request.id },
+        data: { status: "MANDATE_PENDING" },
+      });
+    } else if (request.mandateId) {
+      await mandateService.submitDraftToBank(request.mandateId, tenant.id, tenantUserId);
+    } else {
       await mandateService.create(tenant.id, tenantUserId, {
         financingRequestId: request.id,
         bankAccountId,
@@ -917,10 +950,14 @@ export class FinancingService {
       include: { mandate: true },
     });
 
+    const usedScannedMandate = request.mandate?.mandateSource === "SCANNED_UPLOAD";
+
     await notificationService.create({
       userId: tenantUserId,
-      title: "Repayment mandate sent to bank",
-      body: `You accepted the lender offer at ${interestRate}% on ${request.property.name}. Your repayment mandate has been sent to the bank — funds are disbursed after it is active.`,
+      title: usedScannedMandate ? "Financing terms accepted" : "Repayment mandate sent to bank",
+      body: usedScannedMandate
+        ? `You accepted the lender offer at ${interestRate}% on ${request.property.name}. Submit your scanned mandate for review to complete financing.`
+        : `You accepted the lender offer at ${interestRate}% on ${request.property.name}. Your repayment mandate has been sent to the bank — funds are disbursed after it is active.`,
       metadata: { financingRequestId: request.id },
     });
 

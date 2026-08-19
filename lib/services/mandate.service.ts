@@ -74,6 +74,115 @@ export class MandateService {
     return prisma.mandate.findUniqueOrThrow({ where: { id: mandateId } });
   }
 
+  async createDraftForFinancing(
+    tenantId: string,
+    userId: string,
+    financingRequestId: string,
+    bankAccountId: string
+  ) {
+    const financing = await prisma.financingRequest.findFirst({
+      where: { id: financingRequestId, tenantId },
+    });
+    if (!financing || financing.mandateId) return null;
+
+    const bankAccount = await prisma.bankAccount.findFirst({
+      where: { id: bankAccountId, userId, isVerified: true },
+    });
+    if (!bankAccount) return null;
+
+    const provider = getMandateProvider();
+
+    return runTransaction(async (db) => {
+      const created = await db.mandate.create({
+        data: {
+          tenantId,
+          bankAccountId,
+          mandateType: "DIRECT_DEBIT",
+          mandateSource: "PLATFORM_GENERATED",
+          status: "DRAFT",
+          providerName: provider.name,
+        },
+      });
+
+      await db.financingRequest.update({
+        where: { id: financingRequestId },
+        data: { mandateId: created.id },
+      });
+
+      return created;
+    });
+  }
+
+  async submitDraftToBank(mandateId: string, tenantId: string, userId: string) {
+    const mandate = await prisma.mandate.findFirst({
+      where: { id: mandateId, tenantId },
+      include: { financingRequest: true },
+    });
+    if (!mandate) throw new AppError("Mandate not found", 404);
+    if (mandate.status !== "DRAFT") {
+      throw new AppError("Mandate has already been submitted to the bank", 400);
+    }
+    if (mandate.mandateSource !== "PLATFORM_GENERATED") {
+      throw new AppError("Only platform-generated mandates can be sent to the bank automatically", 400);
+    }
+
+    const provider = getMandateProvider();
+    const registration = await provider.registerPlatformMandate({
+      mandateId: mandate.id,
+      bankAccountId: mandate.bankAccountId,
+      tenantUserId: userId,
+    });
+
+    const updated = await prisma.mandate.update({
+      where: { id: mandate.id },
+      data: {
+        providerReference: registration.providerReference,
+        documentUrl: registration.documentUrl ?? mandate.documentUrl,
+        status: registration.status,
+        submittedAt: new Date(),
+      },
+    });
+
+    if (mandate.financingRequest) {
+      await prisma.financingRequest.update({
+        where: { id: mandate.financingRequest.id },
+        data: { status: "MANDATE_PENDING" },
+      });
+    }
+
+    if (registration.status === "ACTIVE") {
+      return this.activateMandate(mandate.id);
+    }
+
+    if (registration.status === "PENDING_MANUAL_RESOLUTION") {
+      await prisma.adminReviewRecord.create({
+        data: {
+          reviewType: "MANDATE",
+          relatedEntityType: "Mandate",
+          relatedEntityId: mandate.id,
+          status: "PENDING",
+        },
+      });
+      await notifyAllAdminsInAppAndEmail(
+        "Mandate pending review",
+        `Mandate ${mandate.id} requires administrator review.`
+      );
+    }
+
+    if (registration.status === "BANK_PROCESSING") {
+      return this.syncBankStatus(mandate.id);
+    }
+
+    await auditService.log({
+      userId,
+      action: "MANDATE_SUBMITTED_TO_BANK",
+      entity: "Mandate",
+      entityId: mandate.id,
+    });
+
+    return updated;
+  }
+
   async create(tenantId: string, userId: string, input: CreateMandateInput) {
     const financing = await prisma.financingRequest.findFirst({
       where: { id: input.financingRequestId, tenantId },
