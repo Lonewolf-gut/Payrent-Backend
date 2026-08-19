@@ -64,12 +64,14 @@
     "cmdk": "^1.1.1",
     "date-fns": "^4.4.0",
     "embla-carousel-react": "^8.6.0",
-    "framer-motion": "^12.40.0",
+    "framer-motion": "^12.43.0",
     "ioredis": "^5.11.0",
     "jsonwebtoken": "^9.0.3",
     "jspdf": "^4.2.1",
     "jspdf-autotable": "^5.0.8",
     "lucide-react": "^1.17.0",
+    "motion-dom": "^13.0.0",
+    "motion-utils": "^13.0.0",
     "next": "^16.2.6",
     "next-auth": "^5.0.0-beta.31",
     "nodemailer": "^7.0.13",
@@ -80,6 +82,7 @@
     "react-dom": "19.2.4",
     "react-hook-form": "^7.76.1",
     "react-icons": "^5.6.0",
+    "react-is": "^19.2.8",
     "recharts": "^3.8.0",
     "resend": "^4.8.0",
     "shadcn": "^4.8.3",
@@ -93,8 +96,8 @@
     "zustand": "^5.0.14"
   },
   "optionalDependencies": {
-    "@next/swc-win32-x64-msvc": "16.2.6",
-    "@next/swc-wasm-nodejs": "16.2.6"
+    "@next/swc-wasm-nodejs": "16.2.6",
+    "@next/swc-win32-x64-msvc": "16.2.6"
   },
   "devDependencies": {
     "@tailwindcss/postcss": "^4",
