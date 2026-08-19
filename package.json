@@ -10,9 +10,15 @@
     "dev:webpack": "node scripts/start-dev.js --webpack",
     "dev:clean-turbo": "node scripts/prune-turbopack-cache.js",
     "clean": "node scripts/clean-cache.js",
-    "dev:reset": "node scripts/stop-dev.js && node scripts/remove-dev-cache-link.js && node scripts/clean-cache.js && npm install next@16.2.6 @next/swc-win32-x64-msvc@16.2.6 react@19.2.4 react-dom@19.2.4 --no-save",
+    "dev:reset": "node scripts/stop-dev.js && node scripts/remove-dev-cache-link.js && node scripts/clean-cache.js && node scripts/fix-swc-win.js",
     "dev:fix": "npm run dev:reset",
+    "fix:swc": "node scripts/fix-swc-win.js",
+    "ensure:split-repo": "node scripts/ensure-split-repo-files.js",
+    "ensure:backend-only": "node scripts/ensure-backend-api-only.js",
+    "prebuild": "node scripts/ensure-backend-api-only.js && node scripts/ensure-split-repo-files.js",
+    "predev": "node scripts/ensure-backend-api-only.js && node scripts/ensure-split-repo-files.js",
     "build": "npm run db:generate && npm run copy-prisma-client && next build --webpack",
+    "build:win": "node scripts/build-win.js",
     "start": "node scripts/start-prod.js",
     "lint": "eslint",
     "test": "vitest run",
@@ -88,7 +94,8 @@
     "zustand": "^5.0.14"
   },
   "optionalDependencies": {
-    "@next/swc-win32-x64-msvc": "^16.2.6"
+    "@next/swc-win32-x64-msvc": "16.2.6",
+    "@next/swc-wasm-nodejs": "16.2.6"
   },
   "devDependencies": {
     "@tailwindcss/postcss": "^4",
