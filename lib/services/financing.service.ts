@@ -948,6 +948,54 @@ export class FinancingService {
     return refreshed ?? request;
   }
 
+  async declineBuyerOffer(tenantUserId: string, financingRequestId: string) {
+    const tenant = await prisma.tenant.findUnique({ where: { userId: tenantUserId } });
+    if (!tenant) throw new AppError("Customer profile required", 403);
+
+    const request = await prisma.financingRequest.findFirst({
+      where: { id: financingRequestId, tenantId: tenant.id, status: "APPROVED" },
+      include: { property: true, mandate: true, feeDisclosure: true },
+    });
+
+    if (!request) {
+      throw new AppError("Financing offer not found or already processed", 404);
+    }
+
+    if (request.buyerAcceptedAt) {
+      throw new AppError("You have already accepted this financing offer", 400);
+    }
+
+    await prisma.financingRequest.update({
+      where: { id: request.id },
+      data: {
+        status: "REJECTED",
+        rejectedAt: new Date(),
+        decisionReason: "Buyer declined the lender financing offer.",
+        offeredInterestRate: null,
+        offeredPlanType: null,
+        approvedAmount: null,
+      },
+    });
+
+    if (request.feeDisclosure?.lenderUserId) {
+      await notificationService.create({
+        userId: request.feeDisclosure.lenderUserId,
+        title: "Financing offer declined",
+        body: `The customer declined your offer for ${request.property.name}. The repayment mandate was not created.`,
+        metadata: { financingRequestId: request.id },
+      });
+    }
+
+    await auditService.log({
+      userId: tenantUserId,
+      action: "FINANCING_TERMS_DECLINED",
+      entity: "FinancingRequest",
+      entityId: request.id,
+    });
+
+    return { id: request.id, status: "REJECTED" };
+  }
+
   async completeFinancingDisbursement(financingRequestId: string) {
     const request = await prisma.financingRequest.findUnique({
       where: { id: financingRequestId },
