@@ -38,6 +38,7 @@ export const PATCH = withAuth(
     let parsed;
     let images: File[] = [];
     let surveyPlanFile: File | null = null;
+    let removedImageIds: string[] = [];
 
     if (req.headers.get("content-type")?.includes("multipart/form-data")) {
       const formData = await req.formData();
@@ -48,6 +49,17 @@ export const PATCH = withAuth(
       const rawSurveyPlan = formData.get("surveyPlan");
       surveyPlanFile =
         rawSurveyPlan instanceof File && rawSurveyPlan.name ? rawSurveyPlan : null;
+      const rawRemoved = formData.get("removedImageIds")?.toString();
+      if (rawRemoved) {
+        try {
+          const parsedRemoved = JSON.parse(rawRemoved);
+          if (Array.isArray(parsedRemoved)) {
+            removedImageIds = parsedRemoved.filter((id): id is string => typeof id === "string");
+          }
+        } catch {
+          removedImageIds = [];
+        }
+      }
     } else {
       const body = await req.json();
       parsed = propertySchema.safeParse(body);
@@ -124,6 +136,15 @@ export const PATCH = withAuth(
         ? new Date(normalized.availableFrom)
         : undefined,
     };
+
+    if (removedImageIds.length > 0) {
+      await prisma.propertyImage.deleteMany({
+        where: {
+          id: { in: removedImageIds },
+          propertyId: id,
+        },
+      });
+    }
 
     if (images.length > 0) {
       updateData.images = {
