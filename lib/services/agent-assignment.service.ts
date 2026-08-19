@@ -64,6 +64,21 @@ export async function assignAgentToProperty(
   });
   if (!property) throw new AppError("Property not found", 404);
 
+  const affiliateLocked =
+    property.status === "ACTIVE" && Boolean(property.agentUserId);
+
+  if (affiliateLocked) {
+    if (agentProfileId !== property.agentUserId) {
+      throw new AppError(
+        "Affiliate assignment cannot be changed on an approved listing",
+        400
+      );
+    }
+    return property.agentUserId
+      ? await assertEligibleAgent(property.agentUserId)
+      : null;
+  }
+
   if (agentProfileId) {
     await assertPlatformAccess(landlordUserId, "assign an Affiliate to advertise listings");
     const agent = await assertEligibleAgent(agentProfileId);

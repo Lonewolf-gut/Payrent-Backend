@@ -89,6 +89,12 @@ export const PATCH = withAuth(
       return apiError(new AppError("Property not found", 404));
     }
 
+    if (property.status === "ACTIVE") {
+      return apiError(
+        new AppError("Approved listings cannot be edited", 403)
+      );
+    }
+
     const normalized = normalizePropertyPayload(parsed.data);
     const existingAttributes =
       parseAttributesJson(
