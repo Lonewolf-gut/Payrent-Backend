@@ -172,6 +172,14 @@ export const addressVerifySchema = z
     entityType: entityTypeSchema.default("INDIVIDUAL"),
     address: z.string().min(5, "Address is required."),
     billType: utilityBillTypeSchema,
+    latitude: z.preprocess(
+      (value) => (value === "" || value == null ? undefined : Number(value)),
+      z.number().min(-90).max(90).optional()
+    ),
+    longitude: z.preprocess(
+      (value) => (value === "" || value == null ? undefined : Number(value)),
+      z.number().min(-180).max(180).optional()
+    ),
   })
   .superRefine((data, ctx) => {
     if (data.entityType === "COMPANY" && data.address.trim().length < 5) {

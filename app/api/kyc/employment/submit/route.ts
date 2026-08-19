@@ -21,22 +21,17 @@ export const POST = withAuth(
       return apiResponse(null, 400, parsed.error.issues[0]?.message ?? "Validation failed.");
     }
 
-    const employmentLetter = getFile(formData, "employmentLetter");
     const staffIdDocument = getFile(formData, "staffIdDocument");
     const ssnitDocument = getFile(formData, "ssnitDocument");
-    if (!employmentLetter || !staffIdDocument || !ssnitDocument) {
-      return apiResponse(
-        null,
-        400,
-        "Employment letter, staff ID document, and SSNIT document are required."
-      );
+    if (!staffIdDocument || !ssnitDocument) {
+      return apiResponse(null, 400, "Staff ID card and SSNIT card are required.");
     }
 
     const result = await kycService.submitManualEmployment(
       session.user.id,
       session.user.role,
       parsed.data,
-      { employmentLetter, staffIdDocument, ssnitDocument }
+      { staffIdDocument, ssnitDocument }
     );
 
     return apiResponse(
