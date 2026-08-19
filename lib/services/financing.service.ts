@@ -270,7 +270,7 @@ export class FinancingService {
     return request;
   }
 
-  private async ensureDraftMandateForRequest(
+  async syncMandateDraftForRequest(
     tenantId: string,
     userId: string,
     financingRequestId: string
@@ -278,18 +278,41 @@ export class FinancingService {
     const request = await prisma.financingRequest.findFirst({
       where: { id: financingRequestId, tenantId },
     });
-    if (!request?.repaymentPreference) return;
+    if (!request?.repaymentPreference) return null;
 
     const repaymentPreference = request.repaymentPreference as RepaymentPreference;
-    if (!repaymentPreference.bankAccountId) return;
+    if (!repaymentPreference.bankAccountId) return null;
 
     const { mandateService } = await import("@/lib/services/mandate.service");
-    await mandateService.createDraftForFinancing(
+    return mandateService.createDraftForFinancing(
       tenantId,
       userId,
       financingRequestId,
       repaymentPreference.bankAccountId
     );
+  }
+
+  async syncAllMandateDraftsForTenant(tenantId: string, userId: string) {
+    const requests = await prisma.financingRequest.findMany({
+      where: {
+        tenantId,
+        mandateId: null,
+        status: { notIn: ["REJECTED", "WITHDRAWN", "CLOSED", "COMPLETED"] },
+      },
+      select: { id: true },
+    });
+
+    for (const request of requests) {
+      await this.syncMandateDraftForRequest(tenantId, userId, request.id);
+    }
+  }
+
+  private async ensureDraftMandateForRequest(
+    tenantId: string,
+    userId: string,
+    financingRequestId: string
+  ) {
+    await this.syncMandateDraftForRequest(tenantId, userId, financingRequestId);
   }
 
   async tryActivatePendingRequests(tenantId: string, propertyId?: string) {
@@ -426,6 +449,12 @@ export class FinancingService {
         autoApproved: assessment.autoApproved,
       },
     });
+
+    await this.syncMandateDraftForRequest(
+      updated.tenantId,
+      updated.tenant.userId,
+      updated.id
+    );
 
     return updated;
   }
