@@ -34,7 +34,17 @@ export const GET = withAuth(
       include: {
         property: { include: { images: { take: 1 } } },
         feeDisclosure: true,
-        mandate: { select: { status: true } },
+        mandate: {
+          select: {
+            id: true,
+            status: true,
+            mandateSource: true,
+            documentUrl: true,
+          },
+        },
+        tenant: {
+          include: { user: { select: { fullName: true, email: true } } },
+        },
       },
       orderBy: { createdAt: "desc" },
     });
