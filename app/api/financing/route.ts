@@ -43,7 +43,7 @@ export const GET = withAuth(
           },
         },
         tenant: {
-          include: { user: { select: { fullName: true, email: true } } },
+          include: { user: { select: { email: true } } },
         },
       },
       orderBy: { createdAt: "desc" },

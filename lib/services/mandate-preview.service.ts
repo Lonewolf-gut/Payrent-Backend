@@ -46,7 +46,7 @@ export async function loadMandatePreviewsForTenant(
         },
       },
       tenant: {
-        include: { user: { select: { fullName: true, email: true } } },
+        include: { user: { select: { email: true } } },
       },
     },
     orderBy: { createdAt: "desc" },

@@ -41,7 +41,7 @@ type FinancingLike = {
   property?: { name?: string | null } | null;
   tenant?: {
     fullName?: string | null;
-    user?: { fullName?: string | null; email?: string | null } | null;
+    user?: { email?: string | null } | null;
   } | null;
   feeDisclosure?: {
     principalAmount?: number | string | { toString(): string } | null;
@@ -116,10 +116,7 @@ export function buildMandatePreview(financing: FinancingLike): MandatePreviewDat
   }
 
   const borrowerName =
-    financing.tenant?.fullName ??
-    financing.tenant?.user?.fullName ??
-    financing.tenant?.user?.email ??
-    "Customer";
+    financing.tenant?.fullName ?? financing.tenant?.user?.email ?? "Customer";
 
   return {
     financingRequestId: financing.id,
