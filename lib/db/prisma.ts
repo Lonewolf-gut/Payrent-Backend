@@ -2,13 +2,20 @@ import { PrismaClient } from "@prisma/client";
 
 const globalForPrisma = globalThis as unknown as {
   prisma: PrismaClient | undefined;
+  prismaHealthCheckedAt?: number;
 };
 
 function createPrismaClient() {
-  return new PrismaClient();
+  return new PrismaClient({
+    log: process.env.NODE_ENV === "development" ? ["error", "warn"] : ["error"],
+  });
 }
 
 export const prisma: PrismaClient = globalForPrisma.prisma ?? createPrismaClient();
+
+if (!globalForPrisma.prisma) {
+  globalForPrisma.prisma = prisma;
+}
 
 export async function runTransaction<T>(
   fn: (db: PrismaClient) => Promise<T>
@@ -16,37 +23,37 @@ export async function runTransaction<T>(
   return prisma.$transaction((tx) => fn(tx as PrismaClient));
 }
 
-if (process.env.NODE_ENV !== "production") {
-  globalForPrisma.prisma = prisma;
-}
+const HEALTH_CHECK_TTL_MS = 30_000;
 
 function sleep(ms: number) {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
-/** Retry DB connect on cold Docker Desktop / dropped connections. */
-export async function ensureDbConnection(retries = 5): Promise<void> {
+/**
+ * Lightweight health check before API handlers run.
+ * Cached briefly so parallel admin dashboard requests do not each grab a DB connection.
+ * Never disconnects the shared client — that breaks concurrent requests under pool limits.
+ */
+export async function ensureDbConnection(retries = 3): Promise<void> {
+  const now = Date.now();
+  if (
+    globalForPrisma.prismaHealthCheckedAt &&
+    now - globalForPrisma.prismaHealthCheckedAt < HEALTH_CHECK_TTL_MS
+  ) {
+    return;
+  }
+
   for (let attempt = 1; attempt <= retries; attempt++) {
     try {
       await prisma.$queryRaw`SELECT 1`;
+      globalForPrisma.prismaHealthCheckedAt = Date.now();
       return;
-    } catch {
-      try {
-        await prisma.$disconnect();
-      } catch {
-        // ignore disconnect errors
+    } catch (error) {
+      if (attempt === retries) {
+        globalForPrisma.prismaHealthCheckedAt = undefined;
+        throw error;
       }
-
-      try {
-        await prisma.$connect();
-        await prisma.$queryRaw`SELECT 1`;
-        return;
-      } catch (error) {
-        if (attempt === retries) {
-          throw error;
-        }
-        await sleep(Math.min(attempt * 1500, 5000));
-      }
+      await sleep(Math.min(attempt * 500, 2000));
     }
   }
 }
