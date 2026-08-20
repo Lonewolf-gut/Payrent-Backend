@@ -463,6 +463,32 @@ export class MandateService {
     });
   }
 
+  async listAllForAdmin() {
+    return prisma.mandate.findMany({
+      include: {
+        tenant: {
+          select: {
+            fullName: true,
+            user: { select: { email: true } },
+          },
+        },
+        bankAccount: true,
+        financingRequest: {
+          include: {
+            property: { select: { name: true } },
+            feeDisclosure: {
+              select: {
+                principalAmount: true,
+                totalRepayable: true,
+              },
+            },
+          },
+        },
+      },
+      orderBy: { createdAt: "desc" },
+    });
+  }
+
   async getById(mandateId: string, tenantId?: string) {
     return prisma.mandate.findFirst({
       where: { id: mandateId, ...(tenantId ? { tenantId } : {}) },

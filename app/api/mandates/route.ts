@@ -5,7 +5,7 @@ import { prisma } from "@/lib/db/prisma";
 import { apiResponse, withAuth } from "@/lib/api/handler";
 
 export const GET = withAuth(
-  async (_req, _ctx, session) => {
+  async (req: NextRequest, _ctx, session) => {
     if (session.user.role === "BUYER") {
       const tenant = await prisma.tenant.findUnique({
         where: { userId: session.user.id },
@@ -16,8 +16,12 @@ export const GET = withAuth(
     }
 
     if (session.user.role === "ADMIN") {
-      const mandates = await mandateService.listPendingReview();
-      return apiResponse(mandates, 200, "Pending mandates retrieved.");
+      const scope = req.nextUrl.searchParams.get("scope");
+      const mandates =
+        scope === "pending"
+          ? await mandateService.listPendingReview()
+          : await mandateService.listAllForAdmin();
+      return apiResponse(mandates, 200, "Mandates retrieved.");
     }
 
     return apiResponse([]);
