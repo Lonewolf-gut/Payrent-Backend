@@ -479,7 +479,9 @@ export class MandateService {
             feeDisclosure: {
               select: {
                 principalAmount: true,
+                interestRate: true,
                 totalRepayable: true,
+                monthlyPayment: true,
               },
             },
           },
